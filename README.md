@@ -50,3 +50,8 @@ This will:
 - Format them with proper checkboxes and priority tags
 - Include task times where available, for [Daily Planner](https://github.com/ivan-lednev/obsidian-day-planner)
 - Include backlog of tasks from previous days
+
+## How to make p1 and p2 tags look like diamonds
+
+- Enable day-planner.css in Custom CSS settings
+- Use Text Snippets plugin, make it use `shift + tab` shortcut and just type `p1 + shift + tab` or `p2 + shift + tab` to get the diamond icon

@@ -4,6 +4,7 @@
 * Add backlog functionality
 * Fix completion time not always being in the end
 * Fix timezone is two hours behind
+* Include p1 and p2 diamonds instructions
 
 ### 1.0.0: 2025-01-12
 
