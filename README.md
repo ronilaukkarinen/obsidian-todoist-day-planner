@@ -2,7 +2,7 @@
 
 ![bash](https://img.shields.io/badge/bash-%23121011.svg?style=for-the-badge&color=%23222222&logo=gnu-bash&logoColor=white) ![Chagtgpt](https://img.shields.io/badge/OpenAI-74aa9c?style=for-the-badge&logo=openai&logoColor=white) ![Google Cloud](https://img.shields.io/badge/GoogleCloud-%234285F4.svg?style=for-the-badge&logo=google-cloud&logoColor=white) ![Obsidian](https://img.shields.io/badge/Obsidian-%23483699.svg?style=for-the-badge&logo=obsidian&logoColor=white) ![Todoist](https://img.shields.io/badge/todoist-badge?style=for-the-badge&logo=todoist&logoColor=%23ffffff&color=%23E44332)
 
-## Save a note of the briefing to Obsidian, sync Google Calendar events to Todoist as tasks and all of it back to Obsidian 🦾
+## Automatically sync Google Calendar events and Todoist tasks as Obsidian daily note with tasks and backlog 🦾
 
 > [!NOTE] 
 > **Please note!** This project uses hardcoded Finnish language strings and is 100% meant for my personal use. The prompt is in Finnish, the tasks are in Finnish, and the output is in Finnish. If you want to use this, you need to modify the script to your own language and needs.
