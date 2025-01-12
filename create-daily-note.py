@@ -30,15 +30,35 @@ def get_todoist_tasks() -> List[Dict]:
 
   try:
     log_info("Fetching active tasks from Todoist...")
+    # First get today's tasks
     response = requests.get(
       "https://api.todoist.com/rest/v2/tasks",
       headers=headers,
       params={"filter": "today"}
     )
     response.raise_for_status()
-    tasks = response.json()
+    today_tasks = response.json()
 
-    # First pass: Adjust times for all tasks
+    # Get all tasks to find subtasks without dates
+    all_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers
+    )
+    all_response.raise_for_status()
+    all_tasks = all_response.json()
+
+    # Create a set of today's task IDs
+    today_task_ids = {str(task['id']) for task in today_tasks}
+
+    # Add subtasks of today's tasks even if they don't have dates
+    tasks = today_tasks.copy()
+    for task in all_tasks:
+      parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+      if parent_id and parent_id in today_task_ids and str(task['id']) not in today_task_ids:
+        log_info(f"Adding dateless subtask: '{task['content']}' with parent ID: {parent_id}")
+        tasks.append(task)
+
+    # Time handling for tasks with dates
     for task in tasks:
       if task.get('due') and task['due'].get('datetime'):
         # Log original time and task details
@@ -77,12 +97,12 @@ def get_todoist_tasks() -> List[Dict]:
     for task in tasks:
       parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
       if parent_id:
-        log_info(f"Found subtask: '{task['content']}' with parent ID: {parent_id}")
+        log_info(f"Found today's subtask: '{task['content']}' with parent ID: {parent_id}")
         if parent_id not in child_tasks:
           child_tasks[parent_id] = []
         child_tasks[parent_id].append(task)
-        task['is_subtask'] = True  # Mark as subtask for formatting
-        log_info(f"  Added subtask to parent {parent_id}")
+        task['is_subtask'] = True
+        log_info(f"  Added today's subtask to parent {parent_id}")
 
     # Create ordered list with proper hierarchy
     ordered_tasks = []
@@ -94,11 +114,16 @@ def get_todoist_tasks() -> List[Dict]:
         ordered_tasks.append(task)
         # Add any children
         if task_id in child_tasks:
-          log_info(f"Adding children for task: '{task['content']}'")
-          children = sorted(child_tasks[task_id],
-                          key=lambda x: x.get('due', {}).get('datetime', ''))
+          log_info(f"Adding today's children for task: '{task['content']}'")
+          # Safe sorting that handles tasks without due dates
+          def sort_key(x):
+            if not x.get('due'):
+              return ''
+            return x['due'].get('datetime', '')
+
+          children = sorted(child_tasks[task_id], key=sort_key)
           for child in children:
-            log_info(f"  Adding child: '{child['content']}'")
+            log_info(f"  Adding today's child: '{child['content']}'")
           ordered_tasks.extend(children)
 
     # Get completed tasks
@@ -301,9 +326,41 @@ def get_future_tasks() -> List[Dict]:
     response.raise_for_status()
     future_tasks = response.json()
 
+    # Create a dictionary to store parent-child relationships
+    child_tasks = {}
+    tasks_by_id = {str(task['id']): task for task in future_tasks}
+
+    # Group child tasks by parent_id
+    for task in future_tasks:
+      parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+      if parent_id:
+        log_info(f"Found future subtask: '{task['content']}' with parent ID: {parent_id}")
+        if parent_id not in child_tasks:
+          child_tasks[parent_id] = []
+        child_tasks[parent_id].append(task)
+        task['is_subtask'] = True
+        log_info(f"  Added future subtask to parent {parent_id}")
+
+    # Create ordered list with proper hierarchy
+    ordered_tasks = []
+
+    # Add root tasks and their children in order
+    for task in future_tasks:
+      task_id = str(task['id'])
+      if not task.get('parent_id'):  # If it's a root task
+        ordered_tasks.append(task)
+        # Add any children
+        if task_id in child_tasks:
+          log_info(f"Adding future children for task: '{task['content']}'")
+          children = sorted(child_tasks[task_id],
+                          key=lambda x: x.get('due', {}).get('datetime', ''))
+          for child in children:
+            log_info(f"  Adding future child: '{child['content']}'")
+          ordered_tasks.extend(children)
+
     # Sort by priority (higher number = higher priority)
-    future_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
-    return future_tasks
+    ordered_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
+    return ordered_tasks
   except requests.exceptions.RequestException as e:
     print(colored(f"Error fetching future tasks: {e}", 'red'))
     return []
