@@ -148,7 +148,7 @@ crontab -e
 
 5. Add this line to run the script every 5 minutes:
 ```bash
-*/5 * * * * /path/to/sync-tasks.sh 2>&1 >/dev/null
+*/5 * * * * /path/to/sync-tasks.sh
 ```
 
 ### Troubleshooting cron
