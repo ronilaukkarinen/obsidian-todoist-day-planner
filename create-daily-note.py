@@ -179,36 +179,77 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
   formatted_tasks = []
   today = datetime.now().strftime("%Y-%m-%d")
 
+  # Create a dictionary to store parent-child relationships
+  child_tasks = {}
+  tasks_by_id = {str(task['id']): task for task in tasks}
+
+  # Group child tasks by parent_id
   for task in tasks:
-    checkbox = "x" if task.get("completed", False) else " "
-    priority = task.get("priority", 1)
-    priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
+    parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+    if parent_id:
+      if parent_id not in child_tasks:
+        child_tasks[parent_id] = []
+      child_tasks[parent_id].append(task)
+      task['is_subtask'] = True
 
-    # Get time information
-    time_str = ""
-    if task.get("due") and task["due"].get("datetime"):
-      # Check if task is for today
-      task_date = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00')).strftime("%Y-%m-%d")
-      if task_date == today:
+  # Add root tasks and their children in order
+  for task in tasks:
+    task_id = str(task['id'])
+    if not task.get('parent_id'):  # If it's a root task
+      checkbox = "x" if task.get("completed", False) else " "
+      priority = task.get("priority", 1)
+      priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
+
+      # Get time information
+      time_str = ""
+      if task.get("due") and task["due"].get("datetime"):
         start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
-        duration = task.get("duration", {}).get("amount", 0)
-        if duration:
-          end_time = start_time + timedelta(minutes=duration)
-          # Format times in local timezone
-          start_local = start_time.astimezone().strftime("%H:%M")
-          end_local = end_time.astimezone().strftime("%H:%M")
-          time_str = f"{start_local} - {end_local} "
+        task_date = start_time.strftime("%Y-%m-%d")
+        if task_date == today:  # Only show times for today's tasks
+          duration = task.get("duration", {}).get("amount", 0)
+          if duration:
+            end_time = start_time + timedelta(minutes=duration)
+            # Format times in local timezone
+            start_local = start_time.astimezone().strftime("%H:%M")
+            end_local = end_time.astimezone().strftime("%H:%M")
+            time_str = f"{start_local} - {end_local} "
 
-    # Format task line
-    project_id = task.get("project_id")
-    project_name = project_names.get(project_id, "")
-    content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
+      # Format task line
+      project_id = task.get("project_id")
+      project_name = project_names.get(project_id, "")
+      content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
 
-    # Create class string from content
-    class_str = create_class_string(content)
+      # Create class string from content
+      class_str = create_class_string(content)
 
-    task_line = f"- [{checkbox}] {time_str}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
-    formatted_tasks.append(task_line)
+      task_line = f"- [{checkbox}] {time_str}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+      formatted_tasks.append(task_line)
+
+      # Add any children
+      if task_id in child_tasks:
+        for child in child_tasks[task_id]:
+          checkbox = "x" if child.get("completed", False) else " "
+          priority = child.get("priority", 1)
+          priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
+
+          # Get time information for child task
+          time_str = ""
+          if child.get("due") and child["due"].get("datetime"):
+            start_time = datetime.fromisoformat(child["due"]["datetime"].replace('Z', '+00:00'))
+            task_date = start_time.strftime("%Y-%m-%d")
+            if task_date == today:  # Only show times for today's tasks
+              duration = child.get("duration", {}).get("amount", 0)
+              if duration:
+                end_time = start_time + timedelta(minutes=duration)
+                # Format times in local timezone
+                start_local = start_time.astimezone().strftime("%H:%M")
+                end_local = end_time.astimezone().strftime("%H:%M")
+                time_str = f"{start_local} - {end_local} "
+
+          content = child.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
+          class_str = create_class_string(content)
+          child_line = f"\t- [{checkbox}] {time_str}<span data-id=\"{child['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+          formatted_tasks.append(child_line)
 
   return "\n".join(formatted_tasks)
 
