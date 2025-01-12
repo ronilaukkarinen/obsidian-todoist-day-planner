@@ -1,6 +1,9 @@
 ### 1.0.2: 2025-01-12
 
 * Add note about personal nature of the project
+* Add backlog functionality
+* Fix completion time not always being in the end
+* Fix timezone is two hours behind
 
 ### 1.0.0: 2025-01-12
 

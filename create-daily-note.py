@@ -83,15 +83,17 @@ def get_todoist_tasks() -> List[Dict]:
               task_details = response.json()
               print(f"\nTask details: {task_details}")
 
-              # Get completion time
+              # Get completion time (add 2 hours for timezone)
               completed_time = datetime.fromisoformat(completed_at.replace('Z', '+00:00'))
-              completion_str = f" (Valmis {completed_time.strftime('%H:%M')})"
+              completed_time = completed_time + timedelta(hours=2)
+              completion_str = f"(Valmis {completed_time.strftime('%H:%M')})"
 
               # Get scheduled time and calculate end time using duration
               if task_details.get('due'):
                 due_datetime = task_details['due'].get('datetime')
                 if due_datetime:
                   scheduled_time = datetime.fromisoformat(due_datetime.replace('Z', '+00:00'))
+                  scheduled_time = scheduled_time + timedelta(hours=2)  # Add 2 hours for timezone
                   time_str = scheduled_time.strftime('%H:%M')
 
                   # Calculate end time if duration exists
@@ -105,7 +107,7 @@ def get_todoist_tasks() -> List[Dict]:
                     "content": item["content"],
                     "completed": True,
                     "priority": item.get("priority", 1),
-                    "due_string": f"{time_str}{completion_str}"
+                    "due_string": f"{time_str} {completion_str}"  # Changed order here
                   })
                   continue
             except requests.exceptions.RequestException:
@@ -123,7 +125,7 @@ def get_todoist_tasks() -> List[Dict]:
               "content": task_content,
               "completed": True,
               "priority": item.get("priority", 1),
-              "due_string": f"{time_str}{completion_str}"
+              "due_string": f"{time_str} {completion_str}"  # Changed order here
             })
           else:
             completed_tasks.append({
@@ -147,16 +149,33 @@ def get_todoist_tasks() -> List[Dict]:
 def format_todoist_tasks(tasks: List[Dict]) -> str:
   task_lines = []
   for task in tasks:
+    print(f"\nFormatting task: {task}")  # Keep debug line
     checkbox = "x" if task.get("completed", False) else " "
     priority = task.get("priority", 1)
     priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
     # Add time if available, otherwise just show the task
     time_str = task.get("due_string", "")
-    if time_str:
-      task_lines.append(f'- [{checkbox}] {time_str} {priority_tag}{task["content"]}')
+    content = task["content"]
+
+    if "Valmis" in time_str:
+      # Split time string into scheduled time and completion time
+      parts = time_str.split(" (Valmis ", 1)
+      if len(parts) == 2:
+        scheduled_time = parts[0].strip()
+        completion_time = f"(Valmis {parts[1]}"  # parts[1] already has the closing parenthesis
+        if scheduled_time:
+          task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
+        else:
+          task_lines.append(f'- [{checkbox}] {priority_tag}{content} {completion_time}')
+      else:
+        # Handle case where time_str is just the completion time
+        task_lines.append(f'- [{checkbox}] {priority_tag}{content} {time_str}')
     else:
-      task_lines.append(f'- [{checkbox}] {priority_tag}{task["content"]}')
+      if time_str:
+        task_lines.append(f'- [{checkbox}] {priority_tag}{time_str} {content}')
+      else:
+        task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
 
   return "\n".join(task_lines)
 
