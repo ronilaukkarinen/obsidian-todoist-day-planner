@@ -155,10 +155,11 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     time_str = task.get("due_string", "")
     content = task["content"]
     task_id = task.get("id", "")
+    project_id = task.get("project_id", "")
 
-    # Wrap content in span with task ID if available
+    # Wrap content in span with task ID and project ID if available
     if task_id:
-      content = f'<span data-id="{task_id}">{content}</span>'
+      content = f'<span data-id="{task_id}" data-project="{project_id}">{content}</span>'
 
     if "Valmis" in time_str:
       # Split time string into scheduled time and completion time

@@ -7,6 +7,7 @@
 * Include p1 and p2 diamonds instructions
 * Add data-id for tasks in Obsidian and prepare for two-day sync
 * Disable completion time in brackets as it shows in Day Planner
+* Add data-project to span for coloring Day Planner blocks
 
 ### 1.0.0: 2025-01-12
 
