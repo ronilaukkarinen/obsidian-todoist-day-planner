@@ -584,7 +584,7 @@ def create_daily_note():
   # Create the content
   content = f"""# {weekday_capitalized}, {now.day}. {month_name}ta
 
-Kello on päiväsuunnitelmapohjan tekohetkellä {now.strftime('%H:%M')}. Tehtäviä tänään: {task_count}.
+Synkronoitu viimeksi klo {now.strftime('%H:%M')}. Tehtäviä tänään: {task_count}.
 
 > [!NOTE] Note to self: Ajo-ohje itselleni
 > Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla. Kirjoita päivän muistiinpanot myös alle.
