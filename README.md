@@ -48,4 +48,5 @@ This will:
 - Create a daily note in your specified Obsidian folder
 - Import all today's tasks from Todoist
 - Format them with proper checkboxes and priority tags
-- Include task times where available
+- Include task times where available, for [Daily Planner](https://github.com/ivan-lednev/obsidian-day-planner)
+- Include backlog of tasks from previous days
