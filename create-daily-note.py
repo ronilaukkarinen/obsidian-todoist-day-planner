@@ -314,6 +314,29 @@ def get_backlog_tasks() -> List[Dict]:
     print(colored(f"Error fetching backlog tasks: {e}", 'red'))
     return []
 
+def get_future_tasks() -> List[Dict]:
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
+
+  try:
+    log_info("Fetching future tasks...")
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers,
+      params={"filter": "due after: today"}
+    )
+    response.raise_for_status()
+    future_tasks = response.json()
+
+    # Sort by priority (higher number = higher priority)
+    future_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
+    return future_tasks
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching future tasks: {e}", 'red'))
+    return []
+
 def create_daily_note():
   log_info("Creating daily note...")
   # Get current date
@@ -340,28 +363,16 @@ def create_daily_note():
   task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
 
-  # Sync tasks with Todoist
-  sync_tasks_with_todoist(existing_tasks, tasks)
+  # Get future tasks
+  future_tasks = get_future_tasks()
+  formatted_future = format_todoist_tasks(future_tasks)
 
   # Get backlog tasks
-  try:
-    log_info("Fetching backlog tasks...")
-    headers = {
-      "Authorization": f"Bearer {os.getenv('TODOIST_API_KEY')}"
-    }
-    response = requests.get(
-      "https://api.todoist.com/rest/v2/tasks",
-      headers=headers,
-      params={"filter": "overdue | no date"}
-    )
-    response.raise_for_status()
-    backlog_tasks = response.json()
-    # Sort by priority (higher number = higher priority)
-    backlog_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
-    formatted_backlog = format_todoist_tasks(backlog_tasks)
-  except requests.exceptions.RequestException as e:
-    print(colored(f"Error fetching backlog tasks: {e}", 'red'))
-    formatted_backlog = ""
+  backlog_tasks = get_backlog_tasks()
+  formatted_backlog = format_todoist_tasks(backlog_tasks)
+
+  # Sync tasks with Todoist
+  sync_tasks_with_todoist(existing_tasks, tasks)
 
   # Format weekday and month names for the header
   weekday_capitalized = weekday.capitalize()
@@ -378,6 +389,10 @@ Kello on päiväsuunnitelmapohjan tekohetkellä {now.strftime('%H:%M')}. Tehtäv
 ## Päivän tehtävät
 
 {formatted_tasks}
+
+## Myöhemmin
+
+{formatted_future}
 
 ## Backlog
 
