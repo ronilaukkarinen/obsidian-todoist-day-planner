@@ -7,6 +7,10 @@ import requests
 from typing import List, Dict
 import re
 from termcolor import colored
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 
 # Load environment variables
 load_dotenv()
@@ -373,7 +377,152 @@ def get_future_tasks() -> List[Dict]:
     print(colored(f"Error fetching future tasks: {e}", 'red'))
     return []
 
+def refresh_google_token() -> str:
+  """Refresh Google API token using refresh token."""
+  response = requests.post(
+    'https://accounts.google.com/o/oauth2/token',
+    data={
+      'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+      'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+      'refresh_token': os.getenv('GOOGLE_REFRESH_TOKEN'),
+      'grant_type': 'refresh_token'
+    }
+  )
+  return response.json()['access_token']
+
+def task_exists_in_todoist(project_id: str, event_title: str, current_day: str) -> bool:
+  """Check if task already exists in Todoist."""
+  # Check active tasks
+  active_response = requests.get(
+    f"https://api.todoist.com/rest/v2/tasks?project_id={project_id}",
+    headers={'Authorization': f"Bearer {os.getenv('TODOIST_API_KEY')}"}
+  )
+  active_tasks = active_response.json()
+
+  # Check completed tasks
+  completed_response = requests.get(
+    f"https://api.todoist.com/sync/v9/completed/get_all?project_id={project_id}",
+    headers={'Authorization': f"Bearer {os.getenv('TODOIST_API_KEY')}"}
+  )
+  completed_tasks = completed_response.json().get('items', [])
+
+  # Check active tasks
+  for task in active_tasks:
+    if task['content'] == event_title and task.get('due', {}).get('date') == current_day:
+      return True
+
+  # Check completed tasks
+  for task in completed_tasks:
+    if task['content'].startswith(event_title) and task['completed_at'].split('T')[0] == current_day:
+      return True
+
+  return False
+
+def create_todoist_task(event: Dict, project_id: str):
+  """Create a task in Todoist from Google Calendar event."""
+  start = event['start'].get('dateTime')
+  end = event['end'].get('dateTime')
+
+  if not start or not end:  # Skip full-day events
+    return
+
+  # Convert to datetime objects and explicitly handle timezone
+  start_dt = datetime.fromisoformat(start.replace('Z', '+00:00')) - timedelta(hours=2)
+  end_dt = datetime.fromisoformat(end.replace('Z', '+00:00')) - timedelta(hours=2)
+
+  # Calculate duration in minutes
+  duration = int((end_dt - start_dt).total_seconds() / 60)
+
+  response = requests.post(
+    'https://api.todoist.com/rest/v2/tasks',
+    headers={
+      'Authorization': f"Bearer {os.getenv('TODOIST_API_KEY')}",
+      'Content-Type': 'application/json'
+    },
+    json={
+      'content': event['summary'],
+      'due_datetime': start_dt.isoformat(),
+      'project_id': project_id,
+      'duration': duration,
+      'duration_unit': 'minute',
+      'labels': ['Google-kalenterin tapahtuma']
+    }
+  )
+
+  if response.status_code == 200:
+    print(colored(f"Created task: {event['summary']}", 'green'))
+  else:
+    print(colored(f"Failed to create task: {event['summary']}", 'red'))
+
+def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
+  """Sync Google Calendar events to Todoist before creating daily note."""
+  log_info("Syncing Google Calendar events to Todoist...")
+
+  # Get project IDs
+  work_project_id = get_todoist_project_id(os.getenv('TODOIST_WORK_PROJECT', 'todo'))
+  personal_project_id = get_todoist_project_id(os.getenv('TODOIST_PERSONAL_PROJECT', 'todo'))
+
+  # Get sync days from env or use default
+  if days is None:
+    days = int(os.getenv('GOOGLE_CALENDAR_SYNC_DAYS', '1'))
+
+  # Refresh Google token
+  access_token = refresh_google_token()
+
+  # Build Google Calendar service
+  creds = Credentials(
+    token=access_token,
+    refresh_token=os.getenv('GOOGLE_REFRESH_TOKEN'),
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    token_uri='https://oauth2.googleapis.com/token'
+  )
+  service = build('calendar', 'v3', credentials=creds)
+
+  # Set time range
+  start_date = datetime.now() if not start_date else datetime.fromisoformat(start_date)
+  end_date = start_date + timedelta(days=days)
+
+  calendars = {
+    os.getenv('WORK_CALENDAR_ID'): work_project_id,
+    os.getenv('FAMILY_CALENDAR_ID'): personal_project_id
+  }
+
+  for calendar_id, project_id in calendars.items():
+    events_result = service.events().list(
+      calendarId=calendar_id,
+      timeMin=start_date.isoformat() + 'Z',
+      timeMax=end_date.isoformat() + 'Z',
+      singleEvents=True,
+      orderBy='startTime'
+    ).execute()
+
+    events = events_result.get('items', [])
+
+    for event in events:
+      # Skip declined events
+      attendees = event.get('attendees', [])
+      if any(a.get('self', False) and a.get('responseStatus') == 'declined' for a in attendees):
+        continue
+
+      # Skip full-day events
+      if 'date' in event['start']:
+        continue
+
+      # Skip if task already exists
+      if task_exists_in_todoist(project_id, event['summary'], start_date.date().isoformat()):
+        continue
+
+      create_todoist_task(event, project_id)
+
 def create_daily_note():
+  # First sync calendar events to Todoist
+  try:
+    sync_google_calendar_to_todoist()
+  except Exception as e:
+    print(colored(f"Error syncing calendar events: {e}", 'red'))
+    # Continue with note creation even if calendar sync fails
+
   log_info("Creating daily note...")
   # Get current date
   now = datetime.now()
@@ -439,6 +588,31 @@ Kello on päiväsuunnitelmapohjan tekohetkellä {now.strftime('%H:%M')}. Tehtäv
     f.write(content)
 
   print(f"Daily note created at: {full_path}")
+
+def get_todoist_project_id(project_name: str) -> str:
+  """Get Todoist project ID by name."""
+  api_key = os.getenv('TODOIST_API_KEY')
+  if not api_key:
+    raise ValueError("TODOIST_API_KEY not set in .env file")
+
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
+
+  try:
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/projects",
+      headers=headers
+    )
+    response.raise_for_status()
+    projects = response.json()
+    for project in projects:
+      if project['name'] == project_name:
+        return project['id']
+    raise ValueError(f"Project {project_name} not found in Todoist")
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching projects: {e}", 'red'))
+    return None
 
 if __name__ == "__main__":
   create_daily_note()
