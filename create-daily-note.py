@@ -160,53 +160,53 @@ def content_to_classes(content: str) -> str:
   # Join words with spaces to create class string
   return ' '.join(words)
 
+def create_class_string(content: str) -> str:
+  """Create a class string from task content by converting to lowercase and removing special characters."""
+  # Remove markdown links [[like this]]
+  content = re.sub(r'\[\[.*?\]\]', '', content)
+
+  # Remove any remaining special characters and convert to lowercase
+  class_str = re.sub(r'[^a-zA-Z0-9\s]', '', content.lower())
+
+  # Replace spaces with spaces (for readability in HTML)
+  class_str = class_str.replace(' ', ' ')
+
+  return class_str.strip()
+
 def format_todoist_tasks(tasks: List[Dict]) -> str:
   # Get project names
   project_names = get_project_names()
+  formatted_tasks = []
 
-  task_lines = []
   for task in tasks:
     checkbox = "x" if task.get("completed", False) else " "
     priority = task.get("priority", 1)
     priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
-    # Format time string
+    # Get time information
     time_str = ""
-    if task.get('due') and task['due'].get('datetime'):
-      start_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-      if task['due'].get('end_datetime'):
-        end_time = datetime.fromisoformat(task['due']['end_datetime'].replace('Z', '+00:00'))
-        time_str = f"{start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}"
+    if task.get("due") and task["due"].get("datetime"):
+      start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
+      duration = task.get("duration", {}).get("amount", 0)
+      if duration:
+        end_time = start_time + timedelta(minutes=duration)
+        # Format times in local timezone
+        start_local = start_time.astimezone().strftime("%H:%M")
+        end_local = end_time.astimezone().strftime("%H:%M")
+        time_str = f"{start_local} - {end_local} "
 
-    content = task["content"]
-    task_id = task.get("id", "")
-    project_id = task.get("project_id", "")
-    parent_id = task.get("parent_id")
-    project_name = project_names.get(str(project_id), "")
+    # Format task line
+    project_id = task.get("project_id")
+    project_name = project_names.get(project_id, "")
+    content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
 
-    # Find parent task to check project
-    parent_project = None
-    if parent_id:
-      parent = next((t for t in tasks if str(t.get('id')) == str(parent_id)), None)
-      if parent:
-        parent_project = parent.get('project_id')
-        log_info(f"Found parent for '{content}': {parent['content']} (Project: {parent_project})")
+    # Create class string from content
+    class_str = create_class_string(content)
 
-    # Convert content to classes
-    classes = content_to_classes(content)
+    task_line = f"- [{checkbox}] {time_str}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+    formatted_tasks.append(task_line)
 
-    # Create empty span with task ID, project name, and content classes
-    id_span = f'<span data-id="{task_id}" data-project="{project_name}" class="{classes}"></span>' if task_id else ""
-
-    # Only indent if it's a subtask AND belongs to the same project as parent
-    indent = "\t" if parent_id and parent_project == project_id else ""
-
-    if time_str:
-      task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {id_span}{content}')
-    else:
-      task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
-
-  return "\n".join(task_lines)
+  return "\n".join(formatted_tasks)
 
 def read_existing_note(file_path: str) -> List[Dict]:
   if not os.path.exists(file_path):
@@ -652,27 +652,44 @@ def get_todoist_project_id(project_name: str) -> str:
 def get_completed_tasks(headers: Dict) -> List[Dict]:
   log_info("Fetching completed tasks...")
   try:
+    # First get completed tasks from sync API
     response = requests.get(
       "https://api.todoist.com/sync/v9/completed/get_all",
-      headers=headers,
-      params={"limit": 30}
+      headers=headers
     )
     response.raise_for_status()
     completed_data = response.json()
 
     today = datetime.now().strftime("%Y-%m-%d")
     completed_tasks = []
+
+    # For each completed task, fetch its original data
     for item in completed_data.get("items", []):
       completed_at = item.get("completed_at", "")
       if completed_at.startswith(today):
-        completed_tasks.append({
-          "content": item["content"],
-          "completed": True,
-          "priority": item.get("priority", 1),
-          "project_id": item.get("project_id"),
-          "parent_id": item.get("parent_id"),  # Include parent_id for completed tasks
-          "id": item.get("task_id")  # Include task_id for completed tasks
-        })
+        # Try to get original task data
+        task_response = requests.get(
+          f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
+          headers=headers
+        )
+
+        log_info(f"Original task response status: {task_response.status_code}")
+        if task_response.status_code == 200:
+          task_data = task_response.json()
+          log_info(f"Original task data: {task_data}")
+          task_data['completed'] = True
+          completed_tasks.append(task_data)
+        else:
+          log_info(f"Fallback: Using basic task data for {item['content']}")
+          # Fallback to basic task data if original not available
+          completed_tasks.append({
+            "content": item["content"],
+            "completed": True,
+            "priority": item.get("priority", 1),
+            "project_id": item.get("project_id"),
+            "parent_id": item.get("parent_id"),
+            "id": item.get("task_id")
+          })
 
     return completed_tasks
   except requests.exceptions.RequestException as e:
