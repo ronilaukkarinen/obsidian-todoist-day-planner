@@ -8,7 +8,7 @@
 * Add data-id for tasks in Obsidian and prepare for two-day sync
 * Disable completion time in brackets as it shows in Day Planner
 * Add data-project to span for coloring Day Planner blocks
-* Add indent support
+* Add indent subtask support
 
 ### 1.0.0: 2025-01-12
 

@@ -174,9 +174,8 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     project_id = task.get("project_id", "")
     parent_id = task.get("parent_id", None)
 
-    # Wrap content in span with task ID and project ID if available
-    if task_id:
-      content = f'<span data-id="{task_id}" data-project="{project_id}">{content}</span>'
+    # Create empty span with task ID and project ID if available
+    id_span = f'<span data-id="{task_id}" data-project="{project_id}"></span>' if task_id else ""
 
     # Find parent task to check project
     parent_project = None
@@ -196,25 +195,25 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
         completion_time = f"(Valmis {parts[1]}"  # parts[1] already has the closing parenthesis
         if INCLUDE_COMPLETION_DATE:
           if scheduled_time:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {id_span}{content} {completion_time}')
           else:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content} {completion_time}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content} {completion_time}')
         else:
           if scheduled_time:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {content}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {id_span}{content}')
           else:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
       else:
         # Handle case where time_str is just the completion time
         if INCLUDE_COMPLETION_DATE:
-          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content} {time_str}')
+          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content} {time_str}')
         else:
-          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
+          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
     else:
       if time_str:
-        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {content}')
+        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {id_span}{content}')
       else:
-        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
+        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
 
   return "\n".join(task_lines)
 
