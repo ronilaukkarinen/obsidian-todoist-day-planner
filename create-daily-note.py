@@ -26,12 +26,7 @@ def log_info(message: str):
 
 def get_todoist_tasks() -> List[Dict]:
   api_key = os.getenv('TODOIST_API_KEY')
-  if not api_key:
-    raise ValueError("TODOIST_API_KEY not set in .env file")
-
-  headers = {
-    "Authorization": f"Bearer {api_key}"
-  }
+  headers = {"Authorization": f"Bearer {api_key}"}
 
   try:
     log_info("Fetching active tasks from Todoist...")
@@ -41,39 +36,75 @@ def get_todoist_tasks() -> List[Dict]:
       params={"filter": "today"}
     )
     response.raise_for_status()
-    active_tasks = response.json()
+    tasks = response.json()
 
-    # Get all tasks to find subtasks of today's tasks
-    all_tasks_response = requests.get(
-      "https://api.todoist.com/rest/v2/tasks",
-      headers=headers
-    )
-    all_tasks_response.raise_for_status()
-    all_tasks = all_tasks_response.json()
-
-    # Get IDs of today's tasks
-    today_task_ids = {task['id'] for task in active_tasks}
-
-    # Add subtasks of today's tasks
-    for task in all_tasks:
-      if task.get('parent_id') in today_task_ids and task['id'] not in today_task_ids:
-        active_tasks.append(task)
-
-    for task in active_tasks:
-      # Add time information for active tasks
+    # First pass: Adjust times for all tasks
+    for task in tasks:
       if task.get('due') and task['due'].get('datetime'):
-        scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-        time_str = scheduled_time.strftime('%H:%M')
+        # Log original time and task details
+        original_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+        log_info(f"Task '{task['content']}' details:")
+        log_info(f"  Original time: {original_time.strftime('%H:%M')}")
+        log_info(f"  Labels: {task.get('labels', [])}")
+        log_info(f"  Parent ID: {task.get('parent_id')}")
+        log_info(f"  Task ID: {task.get('id')}")
 
-        # Calculate end time if duration exists
-        duration = task.get('duration')
-        if duration:
-          duration_minutes = duration.get('amount', 0) * {'minute': 1, 'hour': 60, 'day': 1440}.get(duration.get('unit', 'minute'), 0)
+        # For tasks from Google Calendar (with label), adjust time
+        if 'Google-kalenterin tapahtuma' in task.get('labels', []):
+          scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+          scheduled_time = scheduled_time + timedelta(hours=2)  # Add 2 hours for Google Calendar tasks
+          task['due']['datetime'] = scheduled_time.isoformat()
+        else:
+          # For regular Todoist tasks, keep the time as is
+          scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+          task['due']['datetime'] = scheduled_time.isoformat()
+
+        # Calculate end time based on duration if available
+        if task.get('duration'):
+          duration_minutes = task['duration'].get('amount', 0) if isinstance(task['duration'], dict) else int(task['duration'])
           end_time = scheduled_time + timedelta(minutes=duration_minutes)
-          time_str = f"{time_str} - {end_time.strftime('%H:%M')}"
+          task['due']['end_datetime'] = end_time.isoformat()
 
-        task['due_string'] = time_str
+        # Log adjusted time
+        adjusted_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+        log_info(f"  Adjusted time: {adjusted_time.strftime('%H:%M')}")
 
+    # Create a dictionary to store parent-child relationships
+    child_tasks = {}
+    tasks_by_id = {str(task['id']): task for task in tasks}  # Convert IDs to strings
+
+    # Group child tasks by parent_id and log the relationships
+    for task in tasks:
+      parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+      if parent_id:
+        log_info(f"Found subtask: '{task['content']}' with parent ID: {parent_id}")
+        if parent_id in tasks_by_id:
+          log_info(f"  Parent task found: '{tasks_by_id[parent_id]['content']}'")
+          if parent_id not in child_tasks:
+            child_tasks[parent_id] = []
+          child_tasks[parent_id].append(task)
+          task['is_subtask'] = True  # Mark as subtask for formatting
+        else:
+          log_info(f"  Parent task not in today's tasks")
+
+    # Create ordered list with proper hierarchy
+    ordered_tasks = []
+
+    # Add root tasks and their children in order
+    for task in tasks:
+      task_id = str(task['id'])
+      if not task.get('parent_id'):  # If it's a root task
+        ordered_tasks.append(task)
+        # Add any children
+        if task_id in child_tasks:
+          log_info(f"Adding children for task: '{task['content']}'")
+          children = sorted(child_tasks[task_id],
+                          key=lambda x: x.get('due', {}).get('datetime', ''))
+          for child in children:
+            log_info(f"  Adding child: '{child['content']}'")
+          ordered_tasks.extend(children)
+
+    # Get completed tasks
     log_info("Fetching completed tasks...")
     try:
       response = requests.get(
@@ -89,75 +120,19 @@ def get_todoist_tasks() -> List[Dict]:
       for item in completed_data.get("items", []):
         completed_at = item.get("completed_at", "")
         if completed_at.startswith(today):
-          # Get the original task details
-          task_id = item.get('task_id')
-          if task_id:
-            try:
-              response = requests.get(
-                f"https://api.todoist.com/rest/v2/tasks/{task_id}",
-                headers=headers
-              )
-              task_details = response.json()
-              print(f"\nTask details: {task_details}")
-
-              # Get completion time (add 2 hours for timezone)
-              completed_time = datetime.fromisoformat(completed_at.replace('Z', '+00:00'))
-              completed_time = completed_time + timedelta(hours=2)
-              completion_str = f"(Valmis {completed_time.strftime('%H:%M')})"
-
-              # Get scheduled time and calculate end time using duration
-              if task_details.get('due'):
-                due_datetime = task_details['due'].get('datetime')
-                if due_datetime:
-                  scheduled_time = datetime.fromisoformat(due_datetime.replace('Z', '+00:00'))
-                  scheduled_time = scheduled_time + timedelta(hours=2)  # Add 2 hours for timezone
-                  time_str = scheduled_time.strftime('%H:%M')
-
-                  # Calculate end time if duration exists
-                  duration = task_details.get('duration')
-                  if duration:
-                    duration_minutes = duration.get('amount', 0) * {'minute': 1, 'hour': 60, 'day': 1440}.get(duration.get('unit', 'minute'), 0)
-                    end_time = scheduled_time + timedelta(minutes=duration_minutes)
-                    time_str = f"{time_str} - {end_time.strftime('%H:%M')}"
-
-                  completed_tasks.append({
-                    "content": item["content"],
-                    "completed": True,
-                    "priority": item.get("priority", 1),
-                    "due_string": f"{time_str} {completion_str}"  # Changed order here
-                  })
-                  continue
-            except requests.exceptions.RequestException:
-              pass  # If we can't get task details, fall back to content parsing
-
-          # Fall back to content parsing if no due date found
-          time_pattern = r'(\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?)'
-          time_match = re.search(time_pattern, item["content"])
-          task_content = item["content"]
-
-          if time_match:
-            time_str = time_match.group(1)
-            task_content = re.sub(time_pattern, '', task_content).strip()
-            completed_tasks.append({
-              "content": task_content,
-              "completed": True,
-              "priority": item.get("priority", 1),
-              "due_string": f"{time_str} {completion_str}"  # Changed order here
-            })
-          else:
-            completed_tasks.append({
-              "content": task_content,
-              "completed": True,
-              "priority": item.get("priority", 1),
-              "due_string": completion_str
-            })
+          completed_tasks.append({
+            "content": item["content"],
+            "completed": True,
+            "priority": item.get("priority", 1),
+            "due": item.get("due", {})
+          })
 
     except requests.exceptions.RequestException as e:
       print(colored(f"Error fetching completed tasks: {e}", 'red'))
       completed_tasks = []
 
-    log_info(f"Found {len(active_tasks)} active and {len(completed_tasks)} completed tasks")
-    return active_tasks + completed_tasks
+    log_info(f"Found {len(tasks)} active and {len(completed_tasks)} completed tasks")
+    return ordered_tasks + completed_tasks
 
   except requests.exceptions.RequestException as e:
     print(colored(f"Error fetching tasks from Todoist: {e}", 'red'))
@@ -198,18 +173,22 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
 
   task_lines = []
   for task in tasks:
-    print(f"\nFormatting task: {task}")  # Keep debug line
     checkbox = "x" if task.get("completed", False) else " "
     priority = task.get("priority", 1)
     priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
-    # Add time if available, otherwise just show the task
-    time_str = task.get("due_string", "")
+    # Format time string
+    time_str = ""
+    if task.get('due') and task['due'].get('datetime'):
+      start_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+      if task['due'].get('end_datetime'):
+        end_time = datetime.fromisoformat(task['due']['end_datetime'].replace('Z', '+00:00'))
+        time_str = f"{start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}"
+
     content = task["content"]
     task_id = task.get("id", "")
     project_id = task.get("project_id", "")
     project_name = project_names.get(str(project_id), "")
-    parent_id = task.get("parent_id", None)
 
     # Convert content to classes
     classes = content_to_classes(content)
@@ -217,43 +196,13 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     # Create empty span with task ID, project name, and content classes
     id_span = f'<span data-id="{task_id}" data-project="{project_name}" class="{classes}"></span>' if task_id else ""
 
-    # Find parent task to check project
-    parent_project = None
-    if parent_id:
-      parent = next((t for t in tasks if t.get('id') == parent_id), None)
-      if parent:
-        parent_project = parent.get('project_id')
+    # Add indent for subtasks
+    indent = "\t" if task.get('is_subtask', False) else ""
 
-    # Only indent if it's a subtask AND belongs to the same project as parent
-    indent = "\t" if parent_id and parent_project == project_id else ""
-
-    if "Valmis" in time_str:
-      # Split time string into scheduled time and completion time
-      parts = time_str.split(" (Valmis ", 1)
-      if len(parts) == 2:
-        scheduled_time = parts[0].strip()
-        completion_time = f"(Valmis {parts[1]}"  # parts[1] already has the closing parenthesis
-        if INCLUDE_COMPLETION_DATE:
-          if scheduled_time:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {id_span}{content} {completion_time}')
-          else:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content} {completion_time}')
-        else:
-          if scheduled_time:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {id_span}{content}')
-          else:
-            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
-      else:
-        # Handle case where time_str is just the completion time
-        if INCLUDE_COMPLETION_DATE:
-          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content} {time_str}')
-        else:
-          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
+    if time_str:
+      task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {id_span}{content}')
     else:
-      if time_str:
-        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {id_span}{content}')
-      else:
-        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
+      task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{id_span}{content}')
 
   return "\n".join(task_lines)
 
@@ -394,26 +343,27 @@ def task_exists_in_todoist(project_id: str, event_title: str, current_day: str) 
   """Check if task already exists in Todoist."""
   # Check active tasks
   active_response = requests.get(
-    f"https://api.todoist.com/rest/v2/tasks?project_id={project_id}",
+    "https://api.todoist.com/rest/v2/tasks",  # Remove project_id filter to check all tasks
     headers={'Authorization': f"Bearer {os.getenv('TODOIST_API_KEY')}"}
   )
   active_tasks = active_response.json()
 
   # Check completed tasks
   completed_response = requests.get(
-    f"https://api.todoist.com/sync/v9/completed/get_all?project_id={project_id}",
+    "https://api.todoist.com/sync/v9/completed/get_all",  # Remove project_id filter
     headers={'Authorization': f"Bearer {os.getenv('TODOIST_API_KEY')}"}
   )
   completed_tasks = completed_response.json().get('items', [])
 
-  # Check active tasks
+  # Check active tasks - now checking content and label across all projects
   for task in active_tasks:
-    if task['content'] == event_title and task.get('due', {}).get('date') == current_day:
+    if (task['content'] == event_title and
+        'Google-kalenterin tapahtuma' in task.get('labels', [])):
       return True
 
-  # Check completed tasks
+  # Check completed tasks - now checking content across all projects
   for task in completed_tasks:
-    if task['content'].startswith(event_title) and task['completed_at'].split('T')[0] == current_day:
+    if task['content'] == event_title:
       return True
 
   return False
@@ -498,19 +448,23 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
     ).execute()
 
     events = events_result.get('items', [])
+    log_info(f"Found {len(events)} events in calendar")
 
     for event in events:
       # Skip declined events
       attendees = event.get('attendees', [])
       if any(a.get('self', False) and a.get('responseStatus') == 'declined' for a in attendees):
+        log_info(f"Skipping declined event: {event['summary']}")
         continue
 
       # Skip full-day events
       if 'date' in event['start']:
+        log_info(f"Skipping full-day event: {event['summary']}")
         continue
 
       # Skip if task already exists
       if task_exists_in_todoist(project_id, event['summary'], start_date.date().isoformat()):
+        log_info(f"Skipping existing task: {event['summary']}")
         continue
 
       create_todoist_task(event, project_id)

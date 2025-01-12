@@ -13,6 +13,7 @@
 * Add "Later" section for tasks that are not due today
 * Helper classes to task blocks for Day Planner for coloring blocks
 * Sync Google Calendar to Todoist
+* Add verbose logging for Google Calendar sync
 
 ### 1.0.0: 2025-01-12
 
