@@ -37,25 +37,19 @@ def get_todoist_tasks() -> List[Dict]:
     active_tasks = response.json()
 
     for task in active_tasks:
-      task_id = task.get('id')
-      if task_id:
-        try:
-          response = requests.get(
-            f"https://api.todoist.com/rest/v2/tasks/{task_id}",
-            headers=headers
-          )
-          response.raise_for_status()
-          task_details = response.json()
-          task['completed'] = task_details.get('completed', False)
-          # Extract time from content if it exists
-          time_pattern = r'(\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?)'
-          time_match = re.search(time_pattern, task_details['content'])
-          if time_match:
-            time_str = time_match.group(1)
-            task['content'] = re.sub(time_pattern, '', task_details['content']).strip()
-            task['due_string'] = time_str
-        except requests.exceptions.RequestException:
-          task['completed'] = False
+      # Add time information for active tasks
+      if task.get('due') and task['due'].get('datetime'):
+        scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+        time_str = scheduled_time.strftime('%H:%M')
+
+        # Calculate end time if duration exists
+        duration = task.get('duration')
+        if duration:
+          duration_minutes = duration.get('amount', 0) * {'minute': 1, 'hour': 60, 'day': 1440}.get(duration.get('unit', 'minute'), 0)
+          end_time = scheduled_time + timedelta(minutes=duration_minutes)
+          time_str = f"{time_str} - {end_time.strftime('%H:%M')}"
+
+        task['due_string'] = time_str
 
     log_info("Fetching completed tasks...")
     try:
