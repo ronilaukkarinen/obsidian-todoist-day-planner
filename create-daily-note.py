@@ -14,6 +14,9 @@ load_dotenv()
 # Set locale to Finnish
 locale.setlocale(locale.LC_TIME, 'fi_FI.UTF-8')
 
+# Add a configuration variable
+INCLUDE_COMPLETION_DATE = False
+
 def log_info(message: str):
   print(colored(f"ℹ️  {message}", 'cyan'))
 
@@ -163,13 +166,22 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
       if len(parts) == 2:
         scheduled_time = parts[0].strip()
         completion_time = f"(Valmis {parts[1]}"  # parts[1] already has the closing parenthesis
-        if scheduled_time:
-          task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
+        if INCLUDE_COMPLETION_DATE:
+          if scheduled_time:
+            task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
+          else:
+            task_lines.append(f'- [{checkbox}] {priority_tag}{content} {completion_time}')
         else:
-          task_lines.append(f'- [{checkbox}] {priority_tag}{content} {completion_time}')
+          if scheduled_time:
+            task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content}')
+          else:
+            task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
       else:
         # Handle case where time_str is just the completion time
-        task_lines.append(f'- [{checkbox}] {priority_tag}{content} {time_str}')
+        if INCLUDE_COMPLETION_DATE:
+          task_lines.append(f'- [{checkbox}] {priority_tag}{content} {time_str}')
+        else:
+          task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
     else:
       if time_str:
         task_lines.append(f'- [{checkbox}] {priority_tag}{time_str} {content}')
