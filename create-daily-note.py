@@ -177,6 +177,7 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
   # Get project names
   project_names = get_project_names()
   formatted_tasks = []
+  today = datetime.now().strftime("%Y-%m-%d")
 
   for task in tasks:
     checkbox = "x" if task.get("completed", False) else " "
@@ -186,14 +187,17 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     # Get time information
     time_str = ""
     if task.get("due") and task["due"].get("datetime"):
-      start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
-      duration = task.get("duration", {}).get("amount", 0)
-      if duration:
-        end_time = start_time + timedelta(minutes=duration)
-        # Format times in local timezone
-        start_local = start_time.astimezone().strftime("%H:%M")
-        end_local = end_time.astimezone().strftime("%H:%M")
-        time_str = f"{start_local} - {end_local} "
+      # Check if task is for today
+      task_date = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00')).strftime("%Y-%m-%d")
+      if task_date == today:
+        start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
+        duration = task.get("duration", {}).get("amount", 0)
+        if duration:
+          end_time = start_time + timedelta(minutes=duration)
+          # Format times in local timezone
+          start_local = start_time.astimezone().strftime("%H:%M")
+          end_local = end_time.astimezone().strftime("%H:%M")
+          time_str = f"{start_local} - {end_local} "
 
     # Format task line
     project_id = task.get("project_id")
