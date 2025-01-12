@@ -11,6 +11,7 @@
 * Add indent subtask support
 * Make span not to break the formatting
 * Add "Later" section for tasks that are not due today
+* Helper classes to task blocks for Day Planner for coloring blocks
 
 ### 1.0.0: 2025-01-12
 

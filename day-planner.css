@@ -10,6 +10,14 @@
   --color-deep-teal: #265a63;
   --color-dark-nightblue-grey: #161828;
   --color-dark-nightblue-grey-hover: #1f2339;
+
+  /* Add bunch of modern dark colors and their subtle hover states */
+  --color-dark-purple: #28284f;
+  --color-dark-purple-hover: #36366a;
+  --color-dark-blue: #1e1e2e;
+  --color-dark-blue-hover: #2a2a3c;
+  --color-dark-green: #274a40;
+  --color-dark-green-hover: #2d6a58;
 }
 
 /* stylelint-disable-next-line */
@@ -131,6 +139,25 @@
   .content:hover .remote-task-content:has(.calendar-name),
   .content:focus .remote-task-content:has(.calendar-name) {
     background-color: var(--color-deep-teal);
+  }
+
+  /* Blocks containing classes that start with "obsidian" */
+  .content:has([class^="obsidian"]) {
+    background-color: var(--color-dark-purple) !important;
+  }
+
+  .content:has([class^="obsidian"]):hover,
+  .content:has([class^="obsidian"]):focus {
+    background-color: var(--color-dark-purple-hover) !important;
+  }
+
+  .content:has([class^="pelaaminen"]) {
+    background-color: var(--color-dark-green) !important;
+  }
+
+  .content:has([class^="pelaaminen"]):hover,
+  .content:has([class^="pelaaminen"]):focus {
+    background-color: var(--color-dark-green-hover) !important;
   }
 }
 

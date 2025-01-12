@@ -177,6 +177,17 @@ def get_project_names() -> Dict[str, str]:
     print(colored(f"Error fetching projects: {e}", 'red'))
     return {}
 
+def content_to_classes(content: str) -> str:
+  # Remove special characters and convert to lowercase
+  # Keep only letters, numbers, and spaces
+  cleaned = re.sub(r'[^a-zA-Z0-9\s]', '', content)
+
+  # Split into words and filter out empty strings
+  words = [word.lower() for word in cleaned.split() if word]
+
+  # Join words with spaces to create class string
+  return ' '.join(words)
+
 def format_todoist_tasks(tasks: List[Dict]) -> str:
   # Get project names
   project_names = get_project_names()
@@ -196,8 +207,11 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     project_name = project_names.get(str(project_id), "")
     parent_id = task.get("parent_id", None)
 
-    # Create empty span with task ID and project name if available
-    id_span = f'<span data-id="{task_id}" data-project="{project_name}"></span>' if task_id else ""
+    # Convert content to classes
+    classes = content_to_classes(content)
+
+    # Create empty span with task ID, project name, and content classes
+    id_span = f'<span data-id="{task_id}" data-project="{project_name}" class="{classes}"></span>' if task_id else ""
 
     # Find parent task to check project
     parent_project = None
