@@ -318,6 +318,7 @@ def get_future_tasks() -> List[Dict]:
 
   try:
     log_info("Fetching future tasks...")
+    # First get future tasks
     response = requests.get(
       "https://api.todoist.com/rest/v2/tasks",
       headers=headers,
@@ -326,12 +327,31 @@ def get_future_tasks() -> List[Dict]:
     response.raise_for_status()
     future_tasks = response.json()
 
+    # Get all tasks to find subtasks without dates
+    all_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers
+    )
+    all_response.raise_for_status()
+    all_tasks = all_response.json()
+
+    # Create a set of future task IDs
+    future_task_ids = {str(task['id']) for task in future_tasks}
+
+    # Add subtasks of future tasks even if they don't have dates
+    tasks = future_tasks.copy()
+    for task in all_tasks:
+      parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+      if parent_id and parent_id in future_task_ids and str(task['id']) not in future_task_ids:
+        log_info(f"Adding dateless future subtask: '{task['content']}' with parent ID: {parent_id}")
+        tasks.append(task)
+
     # Create a dictionary to store parent-child relationships
     child_tasks = {}
-    tasks_by_id = {str(task['id']): task for task in future_tasks}
+    tasks_by_id = {str(task['id']): task for task in tasks}
 
     # Group child tasks by parent_id
-    for task in future_tasks:
+    for task in tasks:
       parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
       if parent_id:
         log_info(f"Found future subtask: '{task['content']}' with parent ID: {parent_id}")
@@ -345,15 +365,20 @@ def get_future_tasks() -> List[Dict]:
     ordered_tasks = []
 
     # Add root tasks and their children in order
-    for task in future_tasks:
+    for task in tasks:
       task_id = str(task['id'])
       if not task.get('parent_id'):  # If it's a root task
         ordered_tasks.append(task)
         # Add any children
         if task_id in child_tasks:
           log_info(f"Adding future children for task: '{task['content']}'")
-          children = sorted(child_tasks[task_id],
-                          key=lambda x: x.get('due', {}).get('datetime', ''))
+          # Safe sorting that handles tasks without due dates
+          def sort_key(x):
+            if not x.get('due'):
+              return ''
+            return x['due'].get('datetime', '')
+
+          children = sorted(child_tasks[task_id], key=sort_key)
           for child in children:
             log_info(f"  Adding future child: '{child['content']}'")
           ordered_tasks.extend(children)
