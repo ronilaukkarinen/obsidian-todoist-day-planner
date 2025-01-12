@@ -178,6 +178,64 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
 
   return "\n".join(task_lines)
 
+def read_existing_note(file_path: str) -> List[Dict]:
+  if not os.path.exists(file_path):
+    return []
+
+  with open(file_path, 'r', encoding='utf-8') as f:
+    content = f.readlines()
+
+  tasks = []
+  task_pattern = re.compile(r'- \[.\] <span data-id="(\d+)">(.*?)</span>')
+  for line in content:
+    match = task_pattern.search(line)
+    if match:
+      task_id = match.group(1)
+      task_content = match.group(2)
+      tasks.append({"id": task_id, "content": task_content, "line": line.strip()})
+
+  return tasks
+
+def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
+  for note_task in note_tasks:
+    note_task_id = note_task.get("id")
+    if not note_task_id:
+      continue  # Skip tasks without an ID
+
+    for todoist_task in todoist_tasks:
+      todoist_task_id = todoist_task.get("id")
+      if not todoist_task_id:
+        continue  # Skip tasks without an ID
+
+      if note_task_id == str(todoist_task_id):
+        # Compare and sync changes
+        if note_task["content"] != todoist_task["content"]:
+          print(f"Updating Todoist task {todoist_task_id}: {note_task['content']}")  # Debug line
+          update_todoist_task(todoist_task_id, note_task["content"])
+
+def update_todoist_task(task_id: str, new_content: str):
+  api_key = os.getenv('TODOIST_API_KEY')
+  if not api_key:
+    raise ValueError("TODOIST_API_KEY not set in .env file")
+
+  headers = {
+    "Authorization": f"Bearer {api_key}",
+    "Content-Type": "application/json"
+  }
+  data = {
+    "content": new_content
+  }
+  response = requests.post(
+    f"https://api.todoist.com/rest/v2/tasks/{task_id}",
+    headers=headers,
+    json=data
+  )
+  if response.status_code == 204:
+    print(f"Task {task_id} updated successfully.")
+  else:
+    print(f"Failed to update task {task_id}: {response.status_code} {response.text}")
+  response.raise_for_status()
+
 def create_daily_note():
   log_info("Creating daily note...")
   # Get current date
@@ -196,13 +254,16 @@ def create_daily_note():
 
   full_path = f"{base_path}/{year}/{month}/{day}, {weekday}.md"
 
-  # Create directory structure if it doesn't exist
-  Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
+  # Check if note exists and read existing tasks
+  existing_tasks = read_existing_note(full_path)
 
   # Get today's tasks (including completed)
   tasks = get_todoist_tasks()
   task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
+
+  # Sync tasks with Todoist
+  sync_tasks_with_todoist(existing_tasks, tasks)
 
   # Get backlog tasks
   try:
