@@ -222,7 +222,7 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
       # Create class string from content
       class_str = create_class_string(content)
 
-      task_line = f"- [{checkbox}] {time_str}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+      task_line = f"- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
       formatted_tasks.append(task_line)
 
       # Add any children
@@ -248,7 +248,7 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
 
           content = child.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
           class_str = create_class_string(content)
-          child_line = f"\t- [{checkbox}] {time_str}<span data-id=\"{child['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+          child_line = f"\t- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{child['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
           formatted_tasks.append(child_line)
 
   return "\n".join(formatted_tasks)
