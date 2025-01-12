@@ -22,6 +22,8 @@ locale.setlocale(locale.LC_TIME, 'fi_FI.UTF-8')
 INCLUDE_COMPLETION_DATE = False
 
 def log_info(message: str):
+  # Get current time in 24-hour format
+  current_time = datetime.now().strftime('%H:%M')
   print(colored(f"ℹ️  {message}", 'cyan'))
 
 def get_todoist_tasks() -> List[Dict]:
@@ -61,13 +63,6 @@ def get_todoist_tasks() -> List[Dict]:
     # Time handling for tasks with dates
     for task in tasks:
       if task.get('due') and task['due'].get('datetime'):
-        # Log original time and task details
-        original_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-        log_info(f"Task '{task['content']}' details:")
-        log_info(f"  Original time: {original_time.strftime('%H:%M')}")
-        log_info(f"  Labels: {task.get('labels', [])}")
-        log_info(f"  Parent ID: {task.get('parent_id')}")
-        log_info(f"  Task ID: {task.get('id')}")
 
         # For tasks from Google Calendar (with label), adjust time
         if 'Google-kalenterin tapahtuma' in task.get('labels', []):
@@ -581,10 +576,14 @@ def create_daily_note():
   weekday_capitalized = weekday.capitalize()
   month_name = now.strftime("%B")
 
+  # Update sync time message to use 24-hour format
+  sync_time = datetime.now().strftime('%H:%M')
+  sync_message = f"Synkronoitu viimeksi klo {sync_time}. Tehtäviä tänään: {len(tasks)}."
+
   # Create the content
   content = f"""# {weekday_capitalized}, {now.day}. {month_name}ta
 
-Synkronoitu viimeksi klo {now.strftime('%H:%M')}. Tehtäviä tänään: {task_count}.
+{sync_message}
 
 > [!NOTE] Note to self: Ajo-ohje itselleni
 > Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla. Kirjoita päivän muistiinpanot myös alle.

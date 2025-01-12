@@ -22,26 +22,88 @@ I already have [personal-assistant-cli](https://github.com/ronilaukkarinen/perso
 - Shows task completion status
 - Preserves task times from Todoist
 
+## Requirements
+
+- Python 3.12.1 or newer
+- Obsidian
+- Todoist
+- Debian-based Linux
+
 ## Installation
 
-1. Clone this repository
-2. Install dependencies:
+### Option 1: Using pyenv (recommended)
 
+1. Install required dependencies first:
 ```bash
-python3 -m pip install -r requirements.txt
+sudo apt update
+sudo apt install -y make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
+libffi-dev liblzma-dev
 ```
 
-3. Create a `.env` file with your configuration:
-```env
-OBSIDIAN_DAILY_NOTES_PATH=/path/to/your/obsidian/daily/notes
-TODOIST_API_KEY=your_todoist_api_key
+2. Install pyenv:
+```bash
+curl https://pyenv.run | bash
+```
+
+3. Add these to your shell configuration (~/.bashrc):
+```bash
+# Add these lines at the end of ~/.bashrc:
+export PYENV_ROOT="$HOME/.pyenv"
+[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+```
+
+4. Restart your shell to apply changes:
+```bash
+exec "$SHELL"
+```
+
+5. Install Python 3.12.1 (or newer) with pyenv:
+```bash
+pyenv install 3.12.1
+```
+
+6. Set up the project:
+```bash
+cd obsidian-todoist-day-planner
+pyenv local 3.12.1
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+7. Create and configure your .env file:
+```bash
+cp .env.example .env
+nano .env  # Edit with your settings
+```
+
+### Option 2: System Python with venv
+
+1. Install Python 3.12 and venv:
+```bash
+sudo apt install python3-full python3-pip python3-venv
+```
+
+2. Create a virtual environment:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
 ## Usage
 
-Run the script to create today's note:
+Activate the virtual environment and run the script:
 ```bash
-python3 create-daily-note.py
+source .venv/bin/activate
+python create-daily-note.py
 ```
 
 This will:
@@ -55,3 +117,51 @@ This will:
 
 - Enable day-planner.css in Custom CSS settings
 - Use Text Snippets plugin, make it use `shift + tab` shortcut and just type `p1 + shift + tab` or `p2 + shift + tab` to get the diamond icon
+
+## Automation
+
+### Recommended sync interval
+
+The recommended sync interval is 5 minutes. This ensures your Obsidian notes stay up-to-date with your Todoist tasks without making too many API calls.
+
+### Setting up automatic sync with cron
+
+1. Make sure your virtual environment is set up correctly first.
+
+2. Create a shell script to run the Python script (e.g., `sync-tasks.sh`):
+```bash
+#!/bin/bash
+cd /path/to/obsidian-todoist-day-planner
+source .venv/bin/activate
+python create-daily-note.py >> /tmp/todoist-sync.log 2>&1
+```
+
+3. Make the script executable:
+```bash
+chmod +x sync-tasks.sh
+```
+
+4. Open your crontab:
+```bash
+crontab -e
+```
+
+5. Add this line to run the script every 5 minutes:
+```bash
+*/5 * * * * /path/to/sync-tasks.sh 2>&1 >/dev/null
+```
+
+### Troubleshooting cron
+
+If your cron job isn't working:
+
+1. Make sure all paths in the shell script are absolute paths
+2. Check the cron logs:
+```bash
+grep CRON /var/log/syslog
+```
+
+3. Test the script manually:
+```bash
+./sync-tasks.sh
+```
