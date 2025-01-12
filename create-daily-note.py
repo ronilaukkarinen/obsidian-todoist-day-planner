@@ -39,6 +39,22 @@ def get_todoist_tasks() -> List[Dict]:
     response.raise_for_status()
     active_tasks = response.json()
 
+    # Get all tasks to find subtasks of today's tasks
+    all_tasks_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers
+    )
+    all_tasks_response.raise_for_status()
+    all_tasks = all_tasks_response.json()
+
+    # Get IDs of today's tasks
+    today_task_ids = {task['id'] for task in active_tasks}
+
+    # Add subtasks of today's tasks
+    for task in all_tasks:
+      if task.get('parent_id') in today_task_ids and task['id'] not in today_task_ids:
+        active_tasks.append(task)
+
     for task in active_tasks:
       # Add time information for active tasks
       if task.get('due') and task['due'].get('datetime'):
@@ -156,10 +172,21 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     content = task["content"]
     task_id = task.get("id", "")
     project_id = task.get("project_id", "")
+    parent_id = task.get("parent_id", None)
 
     # Wrap content in span with task ID and project ID if available
     if task_id:
       content = f'<span data-id="{task_id}" data-project="{project_id}">{content}</span>'
+
+    # Find parent task to check project
+    parent_project = None
+    if parent_id:
+      parent = next((t for t in tasks if t.get('id') == parent_id), None)
+      if parent:
+        parent_project = parent.get('project_id')
+
+    # Only indent if it's a subtask AND belongs to the same project as parent
+    indent = "\t" if parent_id and parent_project == project_id else ""
 
     if "Valmis" in time_str:
       # Split time string into scheduled time and completion time
@@ -169,25 +196,25 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
         completion_time = f"(Valmis {parts[1]}"  # parts[1] already has the closing parenthesis
         if INCLUDE_COMPLETION_DATE:
           if scheduled_time:
-            task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {content} {completion_time}')
           else:
-            task_lines.append(f'- [{checkbox}] {priority_tag}{content} {completion_time}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content} {completion_time}')
         else:
           if scheduled_time:
-            task_lines.append(f'- [{checkbox}] {priority_tag}{scheduled_time} {content}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{scheduled_time} {content}')
           else:
-            task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
+            task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
       else:
         # Handle case where time_str is just the completion time
         if INCLUDE_COMPLETION_DATE:
-          task_lines.append(f'- [{checkbox}] {priority_tag}{content} {time_str}')
+          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content} {time_str}')
         else:
-          task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
+          task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
     else:
       if time_str:
-        task_lines.append(f'- [{checkbox}] {priority_tag}{time_str} {content}')
+        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {content}')
       else:
-        task_lines.append(f'- [{checkbox}] {priority_tag}{content}')
+        task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{content}')
 
   return "\n".join(task_lines)
 
@@ -248,6 +275,45 @@ def update_todoist_task(task_id: str, new_content: str):
   else:
     print(f"Failed to update task {task_id}: {response.status_code} {response.text}")
   response.raise_for_status()
+
+def get_backlog_tasks() -> List[Dict]:
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
+
+  try:
+    log_info("Fetching backlog tasks...")
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers,
+      params={"filter": "overdue | no date"}
+    )
+    response.raise_for_status()
+    backlog_tasks = response.json()
+
+    # Get IDs of today's tasks to exclude their subtasks from backlog
+    today_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers,
+      params={"filter": "today"}
+    )
+    today_response.raise_for_status()
+    today_tasks = today_response.json()
+    today_task_ids = {task['id'] for task in today_tasks}
+
+    # Filter out subtasks of today's tasks from backlog
+    backlog_tasks = [
+      task for task in backlog_tasks
+      if not task.get('parent_id') in today_task_ids
+    ]
+
+    # Sort by priority (higher number = higher priority)
+    backlog_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
+    return backlog_tasks
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching backlog tasks: {e}", 'red'))
+    return []
 
 def create_daily_note():
   log_info("Creating daily note...")
