@@ -159,7 +159,28 @@ def get_todoist_tasks() -> List[Dict]:
     print(colored(f"Error fetching tasks from Todoist: {e}", 'red'))
     return []
 
+def get_project_names() -> Dict[str, str]:
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
+
+  try:
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/projects",
+      headers=headers
+    )
+    response.raise_for_status()
+    projects = response.json()
+    return {str(project['id']): project['name'] for project in projects}
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching projects: {e}", 'red'))
+    return {}
+
 def format_todoist_tasks(tasks: List[Dict]) -> str:
+  # Get project names
+  project_names = get_project_names()
+
   task_lines = []
   for task in tasks:
     print(f"\nFormatting task: {task}")  # Keep debug line
@@ -172,10 +193,11 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     content = task["content"]
     task_id = task.get("id", "")
     project_id = task.get("project_id", "")
+    project_name = project_names.get(str(project_id), "")
     parent_id = task.get("parent_id", None)
 
-    # Create empty span with task ID and project ID if available
-    id_span = f'<span data-id="{task_id}" data-project="{project_id}"></span>' if task_id else ""
+    # Create empty span with task ID and project name if available
+    id_span = f'<span data-id="{task_id}" data-project="{project_name}"></span>' if task_id else ""
 
     # Find parent task to check project
     parent_project = None
