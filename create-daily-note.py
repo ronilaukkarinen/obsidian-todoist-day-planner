@@ -181,10 +181,30 @@ def create_daily_note():
   # Create directory structure if it doesn't exist
   Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
 
-  # Get Todoist tasks
+  # Get today's tasks (including completed)
   tasks = get_todoist_tasks()
   task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
+
+  # Get backlog tasks
+  try:
+    log_info("Fetching backlog tasks...")
+    headers = {
+      "Authorization": f"Bearer {os.getenv('TODOIST_API_KEY')}"
+    }
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers,
+      params={"filter": "overdue | no date"}
+    )
+    response.raise_for_status()
+    backlog_tasks = response.json()
+    # Sort by priority (higher number = higher priority)
+    backlog_tasks.sort(key=lambda x: x.get('priority', 1), reverse=True)
+    formatted_backlog = format_todoist_tasks(backlog_tasks)
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching backlog tasks: {e}", 'red'))
+    formatted_backlog = ""
 
   # Format weekday and month names for the header
   weekday_capitalized = weekday.capitalize()
@@ -200,7 +220,11 @@ Kello on päiväsuunnitelmapohjan tekohetkellä {now.strftime('%H:%M')}. Tehtäv
 
 ## Päivän tehtävät
 
-{formatted_tasks}"""
+{formatted_tasks}
+
+## Backlog
+
+{formatted_backlog}"""
 
   # Write the content to file
   with open(full_path, 'w', encoding='utf-8') as f:
