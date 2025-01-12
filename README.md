@@ -4,6 +4,9 @@
 
 ## Save a note of the briefing to Obsidian, sync Google Calendar events to Todoist as tasks and all of it back to Obsidian 🦾
 
+> [!NOTE] 
+> **Please note!** This project uses hardcoded Finnish language strings and is 100% meant for my personal use. The prompt is in Finnish, the tasks are in Finnish, and the output is in Finnish. If you want to use this, you need to modify the script to your own language and needs.
+
 ## Why does this project exist?
 
 I already have [personal-assistant-cli](https://github.com/ronilaukkarinen/personal-assistant-cli), but its main focus was AI and Todoist, not really Obsidian.
