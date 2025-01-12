@@ -71,21 +71,18 @@ def get_todoist_tasks() -> List[Dict]:
 
     # Create a dictionary to store parent-child relationships
     child_tasks = {}
-    tasks_by_id = {str(task['id']): task for task in tasks}  # Convert IDs to strings
+    tasks_by_id = {str(task['id']): task for task in tasks}
 
-    # Group child tasks by parent_id and log the relationships
+    # Group child tasks by parent_id
     for task in tasks:
       parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
       if parent_id:
         log_info(f"Found subtask: '{task['content']}' with parent ID: {parent_id}")
-        if parent_id in tasks_by_id:
-          log_info(f"  Parent task found: '{tasks_by_id[parent_id]['content']}'")
-          if parent_id not in child_tasks:
-            child_tasks[parent_id] = []
-          child_tasks[parent_id].append(task)
-          task['is_subtask'] = True  # Mark as subtask for formatting
-        else:
-          log_info(f"  Parent task not in today's tasks")
+        if parent_id not in child_tasks:
+          child_tasks[parent_id] = []
+        child_tasks[parent_id].append(task)
+        task['is_subtask'] = True  # Mark as subtask for formatting
+        log_info(f"  Added subtask to parent {parent_id}")
 
     # Create ordered list with proper hierarchy
     ordered_tasks = []
@@ -105,31 +102,7 @@ def get_todoist_tasks() -> List[Dict]:
           ordered_tasks.extend(children)
 
     # Get completed tasks
-    log_info("Fetching completed tasks...")
-    try:
-      response = requests.get(
-        "https://api.todoist.com/sync/v9/completed/get_all",
-        headers=headers,
-        params={"limit": 30}
-      )
-      response.raise_for_status()
-      completed_data = response.json()
-
-      today = datetime.now().strftime("%Y-%m-%d")
-      completed_tasks = []
-      for item in completed_data.get("items", []):
-        completed_at = item.get("completed_at", "")
-        if completed_at.startswith(today):
-          completed_tasks.append({
-            "content": item["content"],
-            "completed": True,
-            "priority": item.get("priority", 1),
-            "due": item.get("due", {})
-          })
-
-    except requests.exceptions.RequestException as e:
-      print(colored(f"Error fetching completed tasks: {e}", 'red'))
-      completed_tasks = []
+    completed_tasks = get_completed_tasks(headers)
 
     log_info(f"Found {len(tasks)} active and {len(completed_tasks)} completed tasks")
     return ordered_tasks + completed_tasks
@@ -188,7 +161,16 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     content = task["content"]
     task_id = task.get("id", "")
     project_id = task.get("project_id", "")
+    parent_id = task.get("parent_id")
     project_name = project_names.get(str(project_id), "")
+
+    # Find parent task to check project
+    parent_project = None
+    if parent_id:
+      parent = next((t for t in tasks if str(t.get('id')) == str(parent_id)), None)
+      if parent:
+        parent_project = parent.get('project_id')
+        log_info(f"Found parent for '{content}': {parent['content']} (Project: {parent_project})")
 
     # Convert content to classes
     classes = content_to_classes(content)
@@ -196,8 +178,8 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
     # Create empty span with task ID, project name, and content classes
     id_span = f'<span data-id="{task_id}" data-project="{project_name}" class="{classes}"></span>' if task_id else ""
 
-    # Add indent for subtasks
-    indent = "\t" if task.get('is_subtask', False) else ""
+    # Only indent if it's a subtask AND belongs to the same project as parent
+    indent = "\t" if parent_id and parent_project == project_id else ""
 
     if time_str:
       task_lines.append(f'{indent}- [{checkbox}] {priority_tag}{time_str} {id_span}{content}')
@@ -567,6 +549,36 @@ def get_todoist_project_id(project_name: str) -> str:
   except requests.exceptions.RequestException as e:
     print(colored(f"Error fetching projects: {e}", 'red'))
     return None
+
+def get_completed_tasks(headers: Dict) -> List[Dict]:
+  log_info("Fetching completed tasks...")
+  try:
+    response = requests.get(
+      "https://api.todoist.com/sync/v9/completed/get_all",
+      headers=headers,
+      params={"limit": 30}
+    )
+    response.raise_for_status()
+    completed_data = response.json()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    completed_tasks = []
+    for item in completed_data.get("items", []):
+      completed_at = item.get("completed_at", "")
+      if completed_at.startswith(today):
+        completed_tasks.append({
+          "content": item["content"],
+          "completed": True,
+          "priority": item.get("priority", 1),
+          "project_id": item.get("project_id"),
+          "parent_id": item.get("parent_id"),  # Include parent_id for completed tasks
+          "id": item.get("task_id")  # Include task_id for completed tasks
+        })
+
+    return completed_tasks
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching completed tasks: {e}", 'red'))
+    return []
 
 if __name__ == "__main__":
   create_daily_note()
