@@ -199,7 +199,13 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
         start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
         task_date = start_time.strftime("%Y-%m-%d")
         if task_date == today:  # Only show times for today's tasks
-          duration = task.get("duration", {}).get("amount", 0)
+          # Handle duration more safely
+          duration = 0
+          if isinstance(task.get("duration"), dict):
+            duration = task["duration"].get("amount", 0)
+          elif isinstance(task.get("duration"), (int, str)):
+            duration = int(task["duration"])
+
           if duration:
             end_time = start_time + timedelta(minutes=duration)
             # Format times in local timezone
@@ -231,7 +237,13 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
             start_time = datetime.fromisoformat(child["due"]["datetime"].replace('Z', '+00:00'))
             task_date = start_time.strftime("%Y-%m-%d")
             if task_date == today:  # Only show times for today's tasks
-              duration = child.get("duration", {}).get("amount", 0)
+              # Handle duration more safely
+              duration = 0
+              if isinstance(child.get("duration"), dict):
+                duration = child["duration"].get("amount", 0)
+              elif isinstance(child.get("duration"), (int, str)):
+                duration = int(child["duration"])
+
               if duration:
                 end_time = start_time + timedelta(minutes=duration)
                 # Format times in local timezone
