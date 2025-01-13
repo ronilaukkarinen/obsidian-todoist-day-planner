@@ -557,7 +557,12 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
   service = build('calendar', 'v3', credentials=creds)
 
   # Set time range
-  start_date = datetime.now() if not start_date else datetime.fromisoformat(start_date)
+  if not start_date:
+    # Set to beginning of today (00:00)
+    start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+  else:
+    start_date = datetime.fromisoformat(start_date)
+
   end_date = start_date + timedelta(days=days)
 
   calendars = {
