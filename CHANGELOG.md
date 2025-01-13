@@ -4,6 +4,7 @@
 * Fix NoneType error when duration is not set
 * Fix start date not being set to beginning of today
 * Fix Google Calendar sync logic for dates that are not today
+* Fix some events being added twice to Todoist
 
 ### 1.0.2: 2025-01-12
 

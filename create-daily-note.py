@@ -458,7 +458,9 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
     if 'T' in event_date:
       event_date = event_date.split('T')[0]
 
-    log_info(f"Checking for task '{event_title}' on {event_date}")
+    # Normalize the event title for comparison
+    normalized_event_title = event_title.strip().replace('\u2013', '-').replace('\u2014', '-')
+    log_info(f"Checking for task '{normalized_event_title}' (original: '{event_title}') on {event_date}")
 
     # First check active tasks
     active_response = requests.get(
@@ -470,7 +472,9 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
 
     # Check if task exists in active tasks for the specific date
     for task in active_tasks:
-      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')
+      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '').strip()
+      # Normalize task content the same way
+      normalized_task_content = task_content.replace('\u2013', '-').replace('\u2014', '-')
 
       # Get task's due date
       task_date = None
@@ -482,8 +486,8 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
         else:
           task_date = task['due'].get('date')
 
-      if task_content == event_title:
-        log_info(f"Found matching task name. Task date: {task_date}, Event date: {event_date}")
+      if normalized_task_content == normalized_event_title:
+        log_info(f"Found matching task name. Task content: '{task_content}', Normalized: '{normalized_task_content}'")
         if task_date == event_date:
           log_info(f"Task '{event_title}' already exists for {event_date}")
           return True
