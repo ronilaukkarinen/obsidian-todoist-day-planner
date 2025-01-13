@@ -1,3 +1,7 @@
+### 1.0.3: 2025-01-13
+
+* Fix Google Calendar sync to not add two hours to the time
+
 ### 1.0.2: 2025-01-12
 
 * Add note about personal nature of the project

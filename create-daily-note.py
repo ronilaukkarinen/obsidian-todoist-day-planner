@@ -63,16 +63,9 @@ def get_todoist_tasks() -> List[Dict]:
     # Time handling for tasks with dates
     for task in tasks:
       if task.get('due') and task['due'].get('datetime'):
-
-        # For tasks from Google Calendar (with label), adjust time
-        if 'Google-kalenterin tapahtuma' in task.get('labels', []):
-          scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-          scheduled_time = scheduled_time + timedelta(hours=2)  # Add 2 hours for Google Calendar tasks
-          task['due']['datetime'] = scheduled_time.isoformat()
-        else:
-          # For regular Todoist tasks, keep the time as is
-          scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-          task['due']['datetime'] = scheduled_time.isoformat()
+        # Remove the special handling for Google Calendar tasks
+        scheduled_time = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+        task['due']['datetime'] = scheduled_time.isoformat()
 
         # Calculate end time based on duration if available
         if task.get('duration'):
