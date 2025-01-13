@@ -448,32 +448,19 @@ def refresh_google_token() -> str:
   )
   return response.json()['access_token']
 
-def task_exists_in_todoist(project_id: str, event_title: str, current_day: str) -> bool:
-  """Check if task already exists and/or is completed in Todoist."""
+def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -> bool:
+  """Check if task already exists and/or is completed in Todoist for a specific date."""
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {'Authorization': f"Bearer {api_key}"}
 
   try:
-    # First check completed tasks
-    completed_response = requests.get(
-      "https://api.todoist.com/sync/v9/completed/get_all",
-      headers=headers
-    )
-    completed_response.raise_for_status()
-    completed_tasks = completed_response.json().get('items', [])
+    # Extract date from event_date if it's a datetime string
+    if 'T' in event_date:
+      event_date = event_date.split('T')[0]
 
-    # Get today's date in the format returned by Todoist API
-    today = datetime.now().strftime('%Y-%m-%d')
+    log_info(f"Checking for task '{event_title}' on {event_date}")
 
-    # If task is found in today's completed tasks, return True
-    for task in completed_tasks:
-      completed_date = task.get('completed_at', '').split('T')[0]  # Get just the date part
-      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')  # Remove label
-      if task_content == event_title and completed_date == today:
-        log_info(f"Task '{event_title}' was completed today at {task.get('completed_at')}, skipping creation")
-        return True
-
-    # Then check active tasks
+    # First check active tasks
     active_response = requests.get(
       "https://api.todoist.com/rest/v2/tasks",
       headers=headers
@@ -481,19 +468,51 @@ def task_exists_in_todoist(project_id: str, event_title: str, current_day: str) 
     active_response.raise_for_status()
     active_tasks = active_response.json()
 
-    # Check if task exists in active tasks
+    # Check if task exists in active tasks for the specific date
     for task in active_tasks:
-      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')  # Remove label
-      if (task_content == event_title and
-          'Google-kalenterin tapahtuma' in task.get('labels', [])):
-        log_info(f"Task '{event_title}' found in active tasks")
-        return True
+      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')
 
+      # Get task's due date
+      task_date = None
+      if task.get('due'):
+        if task['due'].get('datetime'):
+          task_date = datetime.fromisoformat(
+            task['due']['datetime'].replace('Z', '+00:00')
+          ).strftime('%Y-%m-%d')
+        else:
+          task_date = task['due'].get('date')
+
+      if task_content == event_title:
+        log_info(f"Found matching task name. Task date: {task_date}, Event date: {event_date}")
+        if task_date == event_date:
+          log_info(f"Task '{event_title}' already exists for {event_date}")
+          return True
+
+    # Then check completed tasks
+    completed_response = requests.get(
+      "https://api.todoist.com/sync/v9/completed/get_all",
+      headers=headers
+    )
+    completed_response.raise_for_status()
+    completed_tasks = completed_response.json().get('items', [])
+
+    # Check completed tasks for the specific date
+    for task in completed_tasks:
+      completed_date = task.get('completed_at', '').split('T')[0]
+      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')
+
+      if task_content == event_title:
+        log_info(f"Found matching completed task name. Completed date: {completed_date}, Event date: {event_date}")
+        if completed_date == event_date:
+          log_info(f"Task '{event_title}' was already completed on {event_date}")
+          return True
+
+    log_info(f"No existing task found for '{event_title}' on {event_date}")
     return False
 
   except requests.exceptions.RequestException as e:
     print(colored(f"Error checking task existence: {e}", 'red'))
-    return False  # Assume task doesn't exist in case of error
+    return False
 
 def create_todoist_task(event: Dict, project_id: str):
   """Create a task in Todoist from Google Calendar event."""
@@ -594,8 +613,13 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
         log_info(f"Skipping full-day event: {event['summary']}")
         continue
 
-      # Skip if task already exists
-      if task_exists_in_todoist(project_id, event['summary'], start_date.date().isoformat()):
+      # Get event's actual date
+      event_date = datetime.fromisoformat(
+        event['start']['dateTime'].replace('Z', '+00:00')
+      ).strftime('%Y-%m-%d')
+
+      # Skip if task already exists for this specific date
+      if task_exists_in_todoist(project_id, event['summary'], event_date):
         log_info(f"Skipping existing task: {event['summary']}")
         continue
 

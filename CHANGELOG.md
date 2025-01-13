@@ -3,6 +3,7 @@
 * Fix Google Calendar sync to not add two hours to the time
 * Fix NoneType error when duration is not set
 * Fix start date not being set to beginning of today
+* Fix Google Calendar sync logic for dates that are not today
 
 ### 1.0.2: 2025-01-12
 
