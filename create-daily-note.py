@@ -629,13 +629,34 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
 
       create_todoist_task(event, project_id)
 
+def check_todoist_api() -> bool:
+  """Check if Todoist API is responding correctly."""
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {"Authorization": f"Bearer {api_key}"}
+
+  try:
+    log_info("Checking Todoist API status...")
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/projects",
+      headers=headers
+    )
+    response.raise_for_status()
+    return True
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Todoist API is not responding correctly: {e}", 'red'))
+    return False
+
 def create_daily_note():
-  # First sync calendar events to Todoist
+  # First check if Todoist API is available
+  if not check_todoist_api():
+    print(colored("Aborting note creation due to Todoist API issues", 'red'))
+    return
+
+  # Rest of the function remains the same...
   try:
     sync_google_calendar_to_todoist()
   except Exception as e:
     print(colored(f"Error syncing calendar events: {e}", 'red'))
-    # Continue with note creation even if calendar sync fails
 
   log_info("Creating daily note...")
   # Get current date

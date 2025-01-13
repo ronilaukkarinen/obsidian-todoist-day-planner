@@ -5,6 +5,7 @@
 * Fix start date not being set to beginning of today
 * Fix Google Calendar sync logic for dates that are not today
 * Fix some events being added twice to Todoist
+* Check Todoist API status before creating a note
 
 ### 1.0.2: 2025-01-12
 
