@@ -458,23 +458,29 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
     if 'T' in event_date:
       event_date = event_date.split('T')[0]
 
-    # Normalize the event title for comparison
-    normalized_event_title = event_title.strip().replace('\u2013', '-').replace('\u2014', '-')
-    log_info(f"Checking for task '{normalized_event_title}' (original: '{event_title}') on {event_date}")
+    # Normalize the event title for comparison (trim and normalize spaces)
+    normalized_event_title = ' '.join(event_title.strip().split())
+    log_info(f"DEBUG: Checking task existence:")
+    log_info(f"  Original title: '{event_title}'")
+    log_info(f"  Normalized title: '{normalized_event_title}'")
+    log_info(f"  Date: {event_date}")
+    log_info(f"  Project ID: {project_id}")
 
     # First check active tasks
     active_response = requests.get(
       "https://api.todoist.com/rest/v2/tasks",
-      headers=headers
+      headers=headers,
+      params={"project_id": project_id}  # Add project_id filter
     )
     active_response.raise_for_status()
     active_tasks = active_response.json()
+    log_info(f"DEBUG: Found {len(active_tasks)} active tasks in project")
 
     # Check if task exists in active tasks for the specific date
     for task in active_tasks:
-      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '').strip()
-      # Normalize task content the same way
-      normalized_task_content = task_content.replace('\u2013', '-').replace('\u2014', '-')
+      # Normalize task content the same way (trim and normalize spaces)
+      original_content = task['content']
+      task_content = ' '.join(original_content.replace(' @Google-kalenterin tapahtuma', '').strip().split())
 
       # Get task's due date
       task_date = None
@@ -486,32 +492,45 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
         else:
           task_date = task['due'].get('date')
 
-      if normalized_task_content == normalized_event_title:
-        log_info(f"Found matching task name. Task content: '{task_content}', Normalized: '{normalized_task_content}'")
+      log_info(f"DEBUG: Comparing task:")
+      log_info(f"  Original content: '{original_content}'")
+      log_info(f"  Normalized content: '{task_content}'")
+      log_info(f"  Task date: {task_date}")
+
+      if task_content == normalized_event_title:
+        log_info(f"DEBUG: Found matching title")
         if task_date == event_date:
-          log_info(f"Task '{event_title}' already exists for {event_date}")
+          log_info(f"DEBUG: Found matching date")
           return True
 
     # Then check completed tasks
     completed_response = requests.get(
       "https://api.todoist.com/sync/v9/completed/get_all",
-      headers=headers
+      headers=headers,
+      params={"project_id": project_id}  # Add project_id filter
     )
     completed_response.raise_for_status()
     completed_tasks = completed_response.json().get('items', [])
+    log_info(f"DEBUG: Found {len(completed_tasks)} completed tasks in project")
 
     # Check completed tasks for the specific date
     for task in completed_tasks:
       completed_date = task.get('completed_at', '').split('T')[0]
-      task_content = task['content'].replace(' @Google-kalenterin tapahtuma', '')
+      original_content = task['content']
+      task_content = ' '.join(original_content.replace(' @Google-kalenterin tapahtuma', '').strip().split())
 
-      if task_content == event_title:
-        log_info(f"Found matching completed task name. Completed date: {completed_date}, Event date: {event_date}")
+      log_info(f"DEBUG: Comparing completed task:")
+      log_info(f"  Original content: '{original_content}'")
+      log_info(f"  Normalized content: '{task_content}'")
+      log_info(f"  Completed date: {completed_date}")
+
+      if task_content == normalized_event_title:
+        log_info(f"DEBUG: Found matching completed title")
         if completed_date == event_date:
-          log_info(f"Task '{event_title}' was already completed on {event_date}")
+          log_info(f"DEBUG: Found matching completed date")
           return True
 
-    log_info(f"No existing task found for '{event_title}' on {event_date}")
+    log_info(f"DEBUG: No matching task found")
     return False
 
   except requests.exceptions.RequestException as e:
