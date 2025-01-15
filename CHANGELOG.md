@@ -1,3 +1,7 @@
+### 1.0.4: 2025-01-15
+
+* Fix events containing emojis or special characters being added twice to Todoist
+
 ### 1.0.3: 2025-01-13
 
 * Fix Google Calendar sync to not add two hours to the time

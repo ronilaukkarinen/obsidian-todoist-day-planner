@@ -458,8 +458,8 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
     if 'T' in event_date:
       event_date = event_date.split('T')[0]
 
-    # Normalize the event title for comparison (trim and normalize spaces)
-    normalized_event_title = ' '.join(event_title.strip().split())
+    # Normalize the event title for comparison (remove special chars and emojis)
+    normalized_event_title = ' '.join(re.sub(r'[^\w\s]', '', event_title).strip().split())
     log_info(f"DEBUG: Checking task existence:")
     log_info(f"  Original title: '{event_title}'")
     log_info(f"  Normalized title: '{normalized_event_title}'")
@@ -480,7 +480,11 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
     for task in active_tasks:
       # Normalize task content the same way (trim and normalize spaces)
       original_content = task['content']
-      task_content = ' '.join(original_content.replace(' @Google-kalenterin tapahtuma', '').strip().split())
+      task_content = ' '.join(
+        re.sub(r'[^\w\s]', '',
+              original_content.replace(' @Google-kalenterin tapahtuma', '')
+        ).strip().split()
+      )
 
       # Get task's due date
       task_date = None
@@ -517,7 +521,11 @@ def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -
     for task in completed_tasks:
       completed_date = task.get('completed_at', '').split('T')[0]
       original_content = task['content']
-      task_content = ' '.join(original_content.replace(' @Google-kalenterin tapahtuma', '').strip().split())
+      task_content = ' '.join(
+        re.sub(r'[^\w\s]', '',
+              original_content.replace(' @Google-kalenterin tapahtuma', '')
+        ).strip().split()
+      )
 
       log_info(f"DEBUG: Comparing completed task:")
       log_info(f"  Original content: '{original_content}'")
