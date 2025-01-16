@@ -531,7 +531,7 @@ def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
     print(colored(f"Failed to create task: {event['summary']}", 'red'))
 
 def sync_google_calendar_to_todoist(days: int = None, start_date: str = None, dry_run: bool = False):
-  """Sync Google Calendar events to Todoist before creating daily note."""
+  """Sync Google Calendar events to Todoist."""
   log_info("Syncing Google Calendar events to Todoist...")
 
   # Get project IDs
@@ -603,7 +603,7 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None, dr
         log_info(f"Skipping already synced event: {event['summary']}")
         continue
 
-      create_todoist_task(event, project_id, dry_run)
+      create_todoist_task(event, project_id, dry_run=dry_run)
 
 def check_todoist_api() -> bool:
   """Check if Todoist API is responding correctly."""
@@ -630,7 +630,7 @@ def create_daily_note(dry_run: bool = False):
 
   # Rest of the function remains the same...
   try:
-    sync_google_calendar_to_todoist()
+    sync_google_calendar_to_todoist(dry_run=dry_run)
   except Exception as e:
     print(colored(f"Error syncing calendar events: {e}", 'red'))
 
