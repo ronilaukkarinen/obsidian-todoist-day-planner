@@ -1,3 +1,8 @@
+### 1.0.5: 2025-01-16
+
+* Make Google Calendar sync more reliable by adding a log file to compare with
+* Add --dry-run option to not create tasks in Todoist
+
 ### 1.0.4: 2025-01-15
 
 * Fix events containing emojis or special characters being added twice to Todoist

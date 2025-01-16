@@ -448,102 +448,39 @@ def refresh_google_token() -> str:
   )
   return response.json()['access_token']
 
-def task_exists_in_todoist(project_id: str, event_title: str, event_date: str) -> bool:
-  """Check if task already exists and/or is completed in Todoist for a specific date."""
-  api_key = os.getenv('TODOIST_API_KEY')
-  headers = {'Authorization': f"Bearer {api_key}"}
-
+def load_synced_events() -> Dict[str, List[Dict]]:
+  """Load previously synced events from log file."""
+  log_file = os.path.join(os.path.dirname(__file__), 'synced_events.log')
   try:
-    # Extract date from event_date if it's a datetime string
-    if 'T' in event_date:
-      event_date = event_date.split('T')[0]
+    if os.path.exists(log_file):
+      with open(log_file, 'r', encoding='utf-8') as f:
+        return {line.split('|')[0]: {
+          'title': line.split('|')[1],
+          'date': line.split('|')[2].strip()
+        } for line in f if '|' in line}
+    return {}
+  except Exception as e:
+    print(colored(f"Error loading synced events: {e}", 'red'))
+    return {}
 
-    # Normalize the event title for comparison (remove special chars and emojis)
-    normalized_event_title = ' '.join(re.sub(r'[^\w\s]', '', event_title).strip().split())
-    log_info(f"DEBUG: Checking task existence:")
-    log_info(f"  Original title: '{event_title}'")
-    log_info(f"  Normalized title: '{normalized_event_title}'")
-    log_info(f"  Date: {event_date}")
-    log_info(f"  Project ID: {project_id}")
+def save_synced_event(event_id: str, title: str, date: str):
+  """Save synced event to log file."""
+  log_file = os.path.join(os.path.dirname(__file__), 'synced_events.log')
+  try:
+    with open(log_file, 'a', encoding='utf-8') as f:
+      f.write(f"{event_id}|{title}|{date}\n")
+  except Exception as e:
+    print(colored(f"Error saving synced event: {e}", 'red'))
 
-    # First check active tasks
-    active_response = requests.get(
-      "https://api.todoist.com/rest/v2/tasks",
-      headers=headers,
-      params={"project_id": project_id}  # Add project_id filter
-    )
-    active_response.raise_for_status()
-    active_tasks = active_response.json()
-    log_info(f"DEBUG: Found {len(active_tasks)} active tasks in project")
-
-    # Check if task exists in active tasks for the specific date
-    for task in active_tasks:
-      # Normalize task content the same way (trim and normalize spaces)
-      original_content = task['content']
-      task_content = ' '.join(
-        re.sub(r'[^\w\s]', '',
-              original_content.replace(' @Google-kalenterin tapahtuma', '')
-        ).strip().split()
-      )
-
-      # Get task's due date
-      task_date = None
-      if task.get('due'):
-        if task['due'].get('datetime'):
-          task_date = datetime.fromisoformat(
-            task['due']['datetime'].replace('Z', '+00:00')
-          ).strftime('%Y-%m-%d')
-        else:
-          task_date = task['due'].get('date')
-
-      log_info(f"DEBUG: Comparing task:")
-      log_info(f"  Original content: '{original_content}'")
-      log_info(f"  Normalized content: '{task_content}'")
-      log_info(f"  Task date: {task_date}")
-
-      if task_content == normalized_event_title:
-        log_info(f"DEBUG: Found matching title")
-        if task_date == event_date:
-          log_info(f"DEBUG: Found matching date")
-          return True
-
-    # Then check completed tasks
-    completed_response = requests.get(
-      "https://api.todoist.com/sync/v9/completed/get_all",
-      headers=headers,
-      params={"project_id": project_id}  # Add project_id filter
-    )
-    completed_response.raise_for_status()
-    completed_tasks = completed_response.json().get('items', [])
-    log_info(f"DEBUG: Found {len(completed_tasks)} completed tasks in project")
-
-    # Check completed tasks for the specific date
-    for task in completed_tasks:
-      completed_date = task.get('completed_at', '').split('T')[0]
-      original_content = task['content']
-      task_content = ' '.join(
-        re.sub(r'[^\w\s]', '',
-              original_content.replace(' @Google-kalenterin tapahtuma', '')
-        ).strip().split()
-      )
-
-      log_info(f"DEBUG: Comparing completed task:")
-      log_info(f"  Original content: '{original_content}'")
-      log_info(f"  Normalized content: '{task_content}'")
-      log_info(f"  Completed date: {completed_date}")
-
-      if task_content == normalized_event_title:
-        log_info(f"DEBUG: Found matching completed title")
-        if completed_date == event_date:
-          log_info(f"DEBUG: Found matching completed date")
-          return True
-
-    log_info(f"DEBUG: No matching task found")
-    return False
-
-  except requests.exceptions.RequestException as e:
-    print(colored(f"Error checking task existence: {e}", 'red'))
-    return False
+def task_exists_in_todoist(event_id: str, event_title: str, event_date: str) -> bool:
+  """Check if event was already synced using the log file."""
+  synced_events = load_synced_events()
+  if event_id in synced_events:
+    event = synced_events[event_id]
+    if event['date'] == event_date:
+      log_info(f"Found matching synced event: {event_title} on {event_date}")
+      return True
+  return False
 
 def create_todoist_task(event: Dict, project_id: str):
   """Create a task in Todoist from Google Calendar event."""
@@ -560,6 +497,7 @@ def create_todoist_task(event: Dict, project_id: str):
   # Calculate duration in minutes
   duration = int((end_dt - start_dt).total_seconds() / 60)
 
+  # Create task
   response = requests.post(
     'https://api.todoist.com/rest/v2/tasks',
     headers={
@@ -577,6 +515,9 @@ def create_todoist_task(event: Dict, project_id: str):
   )
 
   if response.status_code == 200:
+    # Save the event to our log file
+    event_date = start_dt.strftime('%Y-%m-%d')
+    save_synced_event(event['id'], event['summary'], event_date)
     print(colored(f"Created task: {event['summary']}", 'green'))
   else:
     print(colored(f"Failed to create task: {event['summary']}", 'red'))
@@ -649,9 +590,9 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
         event['start']['dateTime'].replace('Z', '+00:00')
       ).strftime('%Y-%m-%d')
 
-      # Skip if task already exists for this specific date
-      if task_exists_in_todoist(project_id, event['summary'], event_date):
-        log_info(f"Skipping existing task: {event['summary']}")
+      # Skip if event was already synced
+      if task_exists_in_todoist(event['id'], event['summary'], event_date):
+        log_info(f"Skipping already synced event: {event['summary']}")
         continue
 
       create_todoist_task(event, project_id)
@@ -827,5 +768,71 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     print(colored(f"Error fetching completed tasks: {e}", 'red'))
     return []
 
+def dummy_sync_google_calendar(days: int = 30):
+  """Populate synced_events.log with existing events without creating Todoist tasks."""
+  log_info("Starting dummy sync to populate synced_events.log...")
+
+  # Refresh Google token
+  access_token = refresh_google_token()
+
+  # Build Google Calendar service
+  creds = Credentials(
+    token=access_token,
+    refresh_token=os.getenv('GOOGLE_REFRESH_TOKEN'),
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    token_uri='https://oauth2.googleapis.com/token'
+  )
+  service = build('calendar', 'v3', credentials=creds)
+
+  # Set time range (past 30 days by default)
+  end_date = datetime.now()
+  start_date = end_date - timedelta(days=days)
+
+  calendars = {
+    os.getenv('WORK_CALENDAR_ID'): os.getenv('TODOIST_WORK_PROJECT', 'todo'),
+    os.getenv('FAMILY_CALENDAR_ID'): os.getenv('TODOIST_PERSONAL_PROJECT', 'todo')
+  }
+
+  total_events = 0
+  for calendar_id, project_name in calendars.items():
+    events_result = service.events().list(
+      calendarId=calendar_id,
+      timeMin=start_date.isoformat() + 'Z',
+      timeMax=end_date.isoformat() + 'Z',
+      singleEvents=True,
+      orderBy='startTime'
+    ).execute()
+
+    events = events_result.get('items', [])
+    log_info(f"Found {len(events)} events in calendar {calendar_id}")
+
+    for event in events:
+      # Skip declined events
+      attendees = event.get('attendees', [])
+      if any(a.get('self', False) and a.get('responseStatus') == 'declined' for a in attendees):
+        continue
+
+      # Skip full-day events
+      if 'date' in event['start']:
+        continue
+
+      # Get event's actual date
+      event_date = datetime.fromisoformat(
+        event['start']['dateTime'].replace('Z', '+00:00')
+      ).strftime('%Y-%m-%d')
+
+      # Save to log file without creating Todoist task
+      save_synced_event(event['id'], event['summary'], event_date)
+      total_events += 1
+
+  log_info(f"Dummy sync complete. Added {total_events} events to synced_events.log")
+
 if __name__ == "__main__":
-  create_daily_note()
+  # Add command line argument handling
+  import sys
+  if len(sys.argv) > 1 and sys.argv[1] == "--dummy-sync":
+    days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+    dummy_sync_google_calendar(days)
+  else:
+    create_daily_note()
