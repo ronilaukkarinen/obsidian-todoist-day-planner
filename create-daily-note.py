@@ -11,6 +11,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import argparse
 
 # Load environment variables
 load_dotenv()
@@ -482,7 +483,7 @@ def task_exists_in_todoist(event_id: str, event_title: str, event_date: str) -> 
       return True
   return False
 
-def create_todoist_task(event: Dict, project_id: str):
+def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   """Create a task in Todoist from Google Calendar event."""
   start = event['start'].get('dateTime')
   end = event['end'].get('dateTime')
@@ -497,7 +498,14 @@ def create_todoist_task(event: Dict, project_id: str):
   # Calculate duration in minutes
   duration = int((end_dt - start_dt).total_seconds() / 60)
 
-  # Create task
+  if dry_run:
+    # Just save to log file without creating task
+    event_date = start_dt.strftime('%Y-%m-%d')
+    save_synced_event(event['id'], event['summary'], event_date)
+    print(colored(f"[DRY RUN] Would create task: {event['summary']}", 'yellow'))
+    return
+
+  # Create actual task if not dry run
   response = requests.post(
     'https://api.todoist.com/rest/v2/tasks',
     headers={
@@ -522,7 +530,7 @@ def create_todoist_task(event: Dict, project_id: str):
   else:
     print(colored(f"Failed to create task: {event['summary']}", 'red'))
 
-def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
+def sync_google_calendar_to_todoist(days: int = None, start_date: str = None, dry_run: bool = False):
   """Sync Google Calendar events to Todoist before creating daily note."""
   log_info("Syncing Google Calendar events to Todoist...")
 
@@ -595,7 +603,7 @@ def sync_google_calendar_to_todoist(days: int = None, start_date: str = None):
         log_info(f"Skipping already synced event: {event['summary']}")
         continue
 
-      create_todoist_task(event, project_id)
+      create_todoist_task(event, project_id, dry_run)
 
 def check_todoist_api() -> bool:
   """Check if Todoist API is responding correctly."""
@@ -614,7 +622,7 @@ def check_todoist_api() -> bool:
     print(colored(f"Todoist API is not responding correctly: {e}", 'red'))
     return False
 
-def create_daily_note():
+def create_daily_note(dry_run: bool = False):
   # First check if Todoist API is available
   if not check_todoist_api():
     print(colored("Aborting note creation due to Todoist API issues", 'red'))
@@ -830,9 +838,8 @@ def dummy_sync_google_calendar(days: int = 30):
 
 if __name__ == "__main__":
   # Add command line argument handling
-  import sys
-  if len(sys.argv) > 1 and sys.argv[1] == "--dummy-sync":
-    days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-    dummy_sync_google_calendar(days)
-  else:
-    create_daily_note()
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--dry-run", action="store_true", help="Don't create tasks in Todoist, just populate the log file")
+  args = parser.parse_args()
+
+  create_daily_note(dry_run=args.dry_run)
