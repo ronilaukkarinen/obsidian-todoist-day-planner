@@ -412,6 +412,7 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], n
           if todoist_task.get('due') and todoist_task['due'].get('datetime'):
             todoist_datetime = datetime.fromisoformat(todoist_task['due']['datetime'].replace('Z', '+00:00'))
             todoist_time = todoist_datetime.strftime("%H:%M")
+            todoist_date = todoist_datetime.strftime("%Y-%m-%d")
 
             if todoist_time != start_time:
               log_info(f"Time differs for task {note_task_id}:")
@@ -424,7 +425,18 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], n
               # Compare timezone-aware datetimes
               if note_mtime and (not todoist_update_time or note_mtime > todoist_update_time):
                 log_info(f"Using Obsidian's time as note was modified at {note_mtime}")
-                updates["due_datetime"] = start_dt.isoformat()
+                if todoist_task['due'].get('string'):
+                  # For recurring tasks, preserve the full NLP string
+                  due_string = todoist_task['due']['string']
+                  # Extract everything except the time
+                  recurrence_match = re.match(r'^(.*?)\b\d{1,2}:\d{2}\b(.*)$', due_string)
+                  if recurrence_match:
+                    before_time = recurrence_match.group(1)
+                    after_time = recurrence_match.group(2)
+                    updates["due_string"] = f"{before_time}{start_time}{after_time}"
+                else:
+                  # For non-recurring tasks, use due_datetime
+                  updates["due_datetime"] = start_dt.isoformat()
                 updates["duration"] = str(duration)
                 updates["duration_unit"] = "minute"
                 needs_update = True
@@ -438,7 +450,14 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], n
               # If no timestamps available, use Obsidian's time
               else:
                 log_info(f"Using Obsidian's time as no update times available")
-                updates["due_datetime"] = start_dt.isoformat()
+                if todoist_task['due'].get('string'):
+                  # For recurring tasks, update only the time in due_string
+                  due_string = todoist_task['due']['string']
+                  time_pattern = r'\b\d{1,2}:\d{2}\b'
+                  updates["due_string"] = re.sub(time_pattern, start_time, due_string)
+                else:
+                  # For non-recurring tasks, use due_datetime
+                  updates["due_datetime"] = start_dt.isoformat()
                 updates["duration"] = str(duration)
                 updates["duration_unit"] = "minute"
                 needs_update = True
