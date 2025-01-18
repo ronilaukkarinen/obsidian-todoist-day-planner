@@ -1012,10 +1012,26 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     completed_tasks = []
 
+    # Get today's tasks to check for parent tasks
+    today_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers,
+      params={"filter": "today"}
+    )
+    today_response.raise_for_status()
+    today_tasks = today_response.json()
+    today_task_ids = {str(task['id']) for task in today_tasks}
+
+    log_info(f"Processing completed tasks for today ({today})")
+    log_info(f"Today's task IDs: {today_task_ids}")
+
     # For each completed task from today
     for item in completed_data.get("items", []):
       completed_at = item.get("completed_at", "")
       if completed_at.startswith(today):
+        log_info(f"\nProcessing task ID {item['task_id']}: {item.get('content', '')}")
+        log_info(f"  Completed at: {completed_at}")
+
         # Try to get original task data to include all properties
         task_response = requests.get(
           f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
@@ -1024,18 +1040,49 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
 
         if task_response.status_code == 200:
           task_data = task_response.json()
-          task_data['completed'] = True
-          completed_tasks.append(task_data)
+          parent_id = str(task_data.get('parent_id')) if task_data.get('parent_id') else None
+          task_id = str(task_data['id'])
+
+          log_info(f"  Task details:")
+          log_info(f"    ID: {task_id}")
+          log_info(f"    Content: {task_data.get('content')}")
+          log_info(f"    Parent ID: {parent_id}")
+          log_info(f"    Is parent scheduled for today: {parent_id in today_task_ids if parent_id else 'N/A'}")
+
+          if not parent_id or (parent_id and parent_id not in today_task_ids):
+            task_data['completed'] = True
+            completed_tasks.append(task_data)
+            log_info(f"  ✅ Added to completed tasks list")
+          else:
+            log_info(f"  ❌ Skipped - subtask of today's task")
         else:
-          # Fallback to basic task data if original not available
-          completed_tasks.append({
+          log_info(f"  Using fallback task data")
+          task_data = {
             "id": item["task_id"],
             "content": item["content"],
             "completed": True,
             "priority": item.get("priority", 1),
             "project_id": item.get("project_id"),
             "parent_id": item.get("parent_id")
-          })
+          }
+          parent_id = str(task_data.get('parent_id')) if task_data.get('parent_id') else None
+          task_id = str(task_data['id'])
+
+          log_info(f"  Fallback task details:")
+          log_info(f"    ID: {task_id}")
+          log_info(f"    Content: {task_data.get('content')}")
+          log_info(f"    Parent ID: {parent_id}")
+          log_info(f"    Is parent scheduled for today: {parent_id in today_task_ids if parent_id else 'N/A'}")
+
+          if not parent_id or (parent_id and parent_id not in today_task_ids):
+            completed_tasks.append(task_data)
+            log_info(f"  ✅ Added to completed tasks list")
+          else:
+            log_info(f"  ❌ Skipped - subtask of today's task")
+
+    log_info(f"\nFinal completed tasks list ({len(completed_tasks)} tasks):")
+    for task in completed_tasks:
+      log_info(f"  - {task.get('content')} (ID: {task.get('id')}, Parent: {task.get('parent_id')})")
 
     return completed_tasks
   except requests.exceptions.RequestException as e:
