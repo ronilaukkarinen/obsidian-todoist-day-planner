@@ -120,6 +120,8 @@ def get_todoist_tasks() -> List[Dict]:
     completed_tasks = get_completed_tasks(headers)
 
     log_info(f"Found {len(tasks)} active and {len(completed_tasks)} completed tasks")
+    # Get completed tasks and add them to our list
+    tasks.extend(get_completed_tasks(headers))
     return ordered_tasks + completed_tasks
 
   except requests.exceptions.RequestException as e:
@@ -324,6 +326,27 @@ def read_existing_note(file_path: str) -> List[Dict]:
   return tasks
 
 def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
+  # Get completed tasks with timestamps
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {"Authorization": f"Bearer {api_key}"}
+
+  try:
+    response = requests.get(
+      "https://api.todoist.com/sync/v9/completed/get_all",
+      headers=headers
+    )
+    response.raise_for_status()
+    completed_data = response.json()
+
+    # Create a map of task_id to completion time
+    todoist_completion_times = {
+      str(item["task_id"]): item["completed_at"]
+      for item in completed_data.get("items", [])
+    }
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching completion times: {e}", 'red'))
+    todoist_completion_times = {}
+
   for note_task in note_tasks:
     note_task_id = note_task.get("id")
     if not note_task_id:
@@ -358,11 +381,24 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
         # Check completion status changes
         note_completed = note_task.get("completed", False)
         todoist_completed = todoist_task.get("completed", False)
+
         if note_completed != todoist_completed:
-          if note_completed:
-            close_todoist_task(todoist_task_id)
+          # If task has a completion time in Todoist, use Todoist's state
+          if note_task_id in todoist_completion_times:
+            if todoist_completed:
+              log_info(f"Task {note_task_id} was completed in Todoist at {todoist_completion_times[note_task_id]}")
+              note_task["completed"] = True
+            else:
+              log_info(f"Task {note_task_id} was uncompleted in Todoist")
+              note_task["completed"] = False
+          # If no completion time in Todoist, use Obsidian's state
           else:
-            reopen_todoist_task(todoist_task_id)
+            if note_completed:
+              log_info(f"Completing task {note_task_id} in Todoist to match note")
+              close_todoist_task(todoist_task_id)
+            else:
+              log_info(f"Reopening task {note_task_id} in Todoist to match note")
+              reopen_todoist_task(todoist_task_id)
 
         # Update content if needed and there are actual changes
         if needs_update and updates:
@@ -869,9 +905,10 @@ def get_todoist_project_id(project_name: str) -> str:
     return None
 
 def get_completed_tasks(headers: Dict) -> List[Dict]:
+  """Load previously completed tasks from today."""
   log_info("Fetching completed tasks...")
   try:
-    # First get completed tasks from sync API
+    # Get completed tasks from sync API
     response = requests.get(
       "https://api.todoist.com/sync/v9/completed/get_all",
       headers=headers
@@ -882,33 +919,17 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     completed_tasks = []
 
-    # For each completed task, fetch its original data
+    # For each completed task from today
     for item in completed_data.get("items", []):
       completed_at = item.get("completed_at", "")
       if completed_at.startswith(today):
-        # Try to get original task data
-        task_response = requests.get(
-          f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
-          headers=headers
-        )
-
-        log_info(f"Original task response status: {task_response.status_code}")
-        if task_response.status_code == 200:
-          task_data = task_response.json()
-          log_info(f"Original task data: {task_data}")
-          task_data['completed'] = True
-          completed_tasks.append(task_data)
-        else:
-          log_info(f"Fallback: Using basic task data for {item['content']}")
-          # Fallback to basic task data if original not available
-          completed_tasks.append({
-            "content": item["content"],
-            "completed": True,
-            "priority": item.get("priority", 1),
-            "project_id": item.get("project_id"),
-            "parent_id": item.get("parent_id"),
-            "id": item.get("task_id")
-          })
+        completed_tasks.append({
+          "id": item["task_id"],
+          "content": item["content"],
+          "completed": True,
+          "priority": item.get("priority", 1),
+          "project_id": item.get("project_id")
+        })
 
     return completed_tasks
   except requests.exceptions.RequestException as e:
