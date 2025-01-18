@@ -177,6 +177,22 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
   child_tasks = {}
   tasks_by_id = {str(task['id']): task for task in tasks}
 
+  # Remove duplicate tasks (keep the newest one based on task ID)
+  unique_tasks = {}
+  for task in tasks:
+    content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
+    parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
+
+    # Create a unique key that includes parent_id to differentiate subtasks
+    unique_key = f"{content}_{parent_id}"
+
+    # If we haven't seen this task before, or if this is a newer version
+    if unique_key not in unique_tasks or int(task['id']) > int(unique_tasks[unique_key]['id']):
+      unique_tasks[unique_key] = task
+
+  # Use the deduplicated tasks list
+  tasks = list(unique_tasks.values())
+
   # Group child tasks by parent_id
   for task in tasks:
     parent_id = str(task.get('parent_id')) if task.get('parent_id') else None
