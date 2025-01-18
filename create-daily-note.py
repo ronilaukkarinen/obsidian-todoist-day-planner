@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import locale
@@ -335,7 +335,7 @@ def read_existing_note(file_path: str) -> List[Dict]:
 
   return tasks
 
-def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
+def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], note_path: str):
   # Get completed tasks with timestamps
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {"Authorization": f"Bearer {api_key}"}
@@ -353,9 +353,37 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
       str(item["task_id"]): item["completed_at"]
       for item in completed_data.get("items", [])
     }
+
+    # Get time update history
+    time_response = requests.get(
+      "https://api.todoist.com/sync/v9/activity/get",
+      headers=headers,
+      params={"limit": 100}
+    )
+    time_response.raise_for_status()
+    activity_data = time_response.json()
+
+    # Create a map of task_id to last time modification
+    todoist_time_updates = {
+      str(event["object_id"]): datetime.fromisoformat(event["event_date"].replace('Z', '+00:00'))
+      for event in activity_data.get("events", [])
+      if event.get("object_type") == "item"
+      and event.get("event_type") == "updated"
+      and "due_date" in str(event.get("extra_data", {}))
+    }
   except requests.exceptions.RequestException as e:
-    print(colored(f"Error fetching completion times: {e}", 'red'))
+    print(colored(f"Error fetching data: {e}", 'red'))
     todoist_completion_times = {}
+    todoist_time_updates = {}
+
+  # Get note's last modification time and make it timezone-aware
+  try:
+    note_mtime = datetime.fromtimestamp(os.path.getmtime(note_path))
+    # Convert to UTC timezone-aware datetime
+    note_mtime = note_mtime.astimezone(timezone.utc)
+  except OSError:
+    note_mtime = None
+    log_info("Could not get note modification time")
 
   for note_task in note_tasks:
     note_task_id = note_task.get("id")
@@ -368,27 +396,54 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
         continue
 
       if note_task_id == str(todoist_task_id):
-        # Compare and sync changes
         needs_update = False
         updates = {}
 
-        # Check content changes - strip HTML tags and markdown links for comparison
-        note_content = re.sub(r'<[^>]+>', '', note_task["content"]).strip()
-        note_content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', note_content)  # Remove [[wiki links]]
-        note_content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', note_content)  # Remove [text](url)
+        # Handle time sync
+        time_match = re.search(r'(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})', note_task.get('line', ''))
+        if time_match:
+          start_time = time_match.group(1)
+          end_time = time_match.group(2)
+          today = datetime.now().strftime("%Y-%m-%d")
+          start_dt = datetime.strptime(f"{today} {start_time}", "%Y-%m-%d %H:%M")
+          end_dt = datetime.strptime(f"{today} {end_time}", "%Y-%m-%d %H:%M")
+          duration = int((end_dt - start_dt).total_seconds() / 60)
 
-        todoist_content = re.sub(r'<[^>]+>', '', todoist_task["content"]).strip()
-        todoist_content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', todoist_content)
-        todoist_content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', todoist_content)
+          if todoist_task.get('due') and todoist_task['due'].get('datetime'):
+            todoist_datetime = datetime.fromisoformat(todoist_task['due']['datetime'].replace('Z', '+00:00'))
+            todoist_time = todoist_datetime.strftime("%H:%M")
 
-        if note_content != todoist_content:
-          log_info(f"Content differs for task {note_task_id}:")
-          log_info(f"  Note content: '{note_content}'")
-          log_info(f"  Todoist content: '{todoist_content}'")
-          updates["content"] = note_content
-          needs_update = True
+            if todoist_time != start_time:
+              log_info(f"Time differs for task {note_task_id}:")
+              log_info(f"  Note time: {start_time}")
+              log_info(f"  Todoist time: {todoist_time}")
 
-        # Check completion status changes
+              # Get Todoist's last update time for this task
+              todoist_update_time = todoist_time_updates.get(note_task_id)
+
+              # Compare timezone-aware datetimes
+              if note_mtime and (not todoist_update_time or note_mtime > todoist_update_time):
+                log_info(f"Using Obsidian's time as note was modified at {note_mtime}")
+                updates["due_datetime"] = start_dt.isoformat()
+                updates["duration"] = str(duration)
+                updates["duration_unit"] = "minute"
+                needs_update = True
+              # If Todoist has a more recent update, use Todoist's time
+              elif todoist_update_time:
+                log_info(f"Using Todoist's time as it was updated at {todoist_update_time}")
+                note_task['line'] = note_task['line'].replace(
+                  f"{start_time} - {end_time}",
+                  f"{todoist_time} - {(todoist_datetime + timedelta(minutes=duration)).strftime('%H:%M')}"
+                )
+              # If no timestamps available, use Obsidian's time
+              else:
+                log_info(f"Using Obsidian's time as no update times available")
+                updates["due_datetime"] = start_dt.isoformat()
+                updates["duration"] = str(duration)
+                updates["duration_unit"] = "minute"
+                needs_update = True
+
+        # Handle completion sync
         note_completed = note_task.get("completed", False)
         todoist_completed = todoist_task.get("completed", False)
 
@@ -410,13 +465,9 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
               log_info(f"Reopening task {note_task_id} in Todoist to match note")
               reopen_todoist_task(todoist_task_id)
 
-        # Update content if needed and there are actual changes
+        # Update task if needed
         if needs_update and updates:
-          # Validate content before sending
-          if "content" in updates and updates["content"].strip():
-            update_todoist_task(todoist_task_id, updates)
-          else:
-            log_info(f"Skipping update for task {note_task_id} - empty content")
+          update_todoist_task(todoist_task_id, updates)
 
 def close_todoist_task(task_id: str):
   """Mark a Todoist task as completed."""
@@ -839,7 +890,7 @@ def create_daily_note(dry_run: bool = False):
   tasks = get_todoist_tasks()
 
   # Sync tasks with Todoist and update our tasks list with any changes
-  sync_tasks_with_todoist(existing_tasks, tasks)
+  sync_tasks_with_todoist(existing_tasks, tasks, full_path)
 
   # Get fresh task list after sync to include completion status changes
   tasks = get_todoist_tasks()

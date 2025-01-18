@@ -19,8 +19,16 @@ I already have [personal-assistant-cli](https://github.com/ronilaukkarinen/perso
 - Creates daily notes in Obsidian with proper Finnish date formatting
 - Imports today's tasks from Todoist (both active and completed)
 - Maintains priority tags (p1-p4) from Todoist
-- Shows task completion status
+- Shows task completion status with two-way sync:
+  - Tasks completed in Todoist are marked complete in Obsidian
+  - Tasks completed in Obsidian are marked complete in Todoist
 - Preserves task times from Todoist
+- Supports time rescheduling from Obsidian back to Todoist
+- Shows task counts with proper Finnish pluralization
+- Maintains task hierarchy (parent/child relationships)
+- Preserves task durations when syncing times
+- Supports markdown links and wiki-style links
+- Handles HTML tags in task content
 
 ## Requirements
 

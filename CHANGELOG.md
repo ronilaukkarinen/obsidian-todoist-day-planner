@@ -7,6 +7,8 @@
 * Remove duplicate tasks from the daily note
 * Sync completed tasks from Obsidian to Todoist
 * Move amount of tasks under each heading
+* Update feature list in README
+* Sync times from Obsidian back to Todoist
 
 ### 1.0.5: 2025-01-16
 
