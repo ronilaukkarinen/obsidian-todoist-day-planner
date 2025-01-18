@@ -176,15 +176,15 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
   formatted_tasks = []
   today = datetime.now().strftime("%Y-%m-%d")
 
-  # Count active (non-completed) tasks
-  active_tasks = len([t for t in tasks if not t.get("completed", False)])
+  # Count all tasks for today, including completed ones
+  total_tasks = len(tasks)
 
   # Finnish pluralization for "tehtävä"
-  task_text = "tehtävä" if active_tasks == 1 else "tehtävää"
+  task_text = "tehtävä" if total_tasks == 1 else "tehtävää"
   if is_today:
-    formatted_tasks.append(f"{active_tasks} {task_text} tänään.\n")
+    formatted_tasks.append(f"{total_tasks} {task_text} tänään.\n")
   else:
-    formatted_tasks.append(f"{active_tasks} {task_text}.\n")
+    formatted_tasks.append(f"{total_tasks} {task_text}.\n")
 
   # Create a dictionary to store parent-child relationships
   child_tasks = {}
@@ -202,9 +202,11 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
     # If we haven't seen this task before, or if this is a newer version
     if unique_key not in unique_tasks or int(task['id']) > int(unique_tasks[unique_key]['id']):
       unique_tasks[unique_key] = task
+      log_info(f"Added/Updated task in unique_tasks: {content} (ID: {task['id']}, Parent: {parent_id})")
 
   # Use the deduplicated tasks list
   tasks = list(unique_tasks.values())
+  log_info(f"After deduplication: {len(tasks)} tasks")
 
   # Group child tasks by parent_id
   for task in tasks:
@@ -214,12 +216,14 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
         child_tasks[parent_id] = []
       child_tasks[parent_id].append(task)
       task['is_subtask'] = True
+      log_info(f"Added child task: {task.get('content')} to parent {parent_id}")
 
   # Create ordered list with proper hierarchy
   ordered_tasks = []
 
   # Add root tasks and their children in order
   root_tasks = [task for task in tasks if not task.get('parent_id')]
+  log_info(f"Found {len(root_tasks)} root tasks")
 
   def sort_key(task):
     # 1. Priority (negative so higher priority comes first)
@@ -245,6 +249,8 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
   # Add root tasks and their children in order
   for task in root_tasks:
     task_id = str(task['id'])
+    log_info(f"Processing root task: {task.get('content')} (ID: {task_id})")
+
     # Use the completion status from the task data
     checkbox = "x" if task.get("completed", False) else " "
     priority = task.get("priority", 1)
