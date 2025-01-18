@@ -186,140 +186,96 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
       child_tasks[parent_id].append(task)
       task['is_subtask'] = True
 
-  # Sort root tasks by priority, time, and creation date
-  root_tasks = [task for task in tasks if not task.get('parent_id')]
-
-  def sort_key(task):
-    priority = -(task.get('priority', 1))  # Negative so higher priority comes first
-
-    # Get time from due datetime if it exists
-    time_str = '999999'  # Default high value for unscheduled tasks
-    if task.get('due') and task['due'].get('datetime'):
-      dt = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
-      time_str = dt.strftime('%H%M%S')
-
-    # Use task ID as proxy for creation time (higher ID = newer task)
-    creation_order = -int(task['id'])  # Negative so newer tasks come first
-
-    return (priority, time_str, creation_order)
-
-  root_tasks.sort(key=sort_key)
-
   # Add root tasks and their children in order
-  for task in root_tasks:
+  for task in tasks:
     task_id = str(task['id'])
-    checkbox = "x" if task.get("completed", False) else " "
-    priority = task.get("priority", 1)
-    priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
+    if not task.get('parent_id'):  # If it's a root task
+      checkbox = "x" if task.get("completed", False) else " "
+      priority = task.get("priority", 1)
+      priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
-    # Get time information
-    time_str = ""
-    if task.get("due") and task["due"].get("datetime"):
-      start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
-      task_date = start_time.strftime("%Y-%m-%d")
-      if task_date == today:  # Only show times for today's tasks
-        # Handle duration more safely
-        duration = 0
-        if isinstance(task.get("duration"), dict):
-          duration = task["duration"].get("amount", 0)
-        elif isinstance(task.get("duration"), (int, str)):
-          duration = int(task["duration"])
+      # Get time information
+      time_str = ""
+      if task.get("due") and task["due"].get("datetime"):
+        start_time = datetime.fromisoformat(task["due"]["datetime"].replace('Z', '+00:00'))
+        task_date = start_time.strftime("%Y-%m-%d")
+        if task_date == today:  # Only show times for today's tasks
+          # Handle duration more safely
+          duration = 0
+          if isinstance(task.get("duration"), dict):
+            duration = task["duration"].get("amount", 0)
+          elif isinstance(task.get("duration"), (int, str)):
+            duration = int(task["duration"])
 
-        if duration:
-          end_time = start_time + timedelta(minutes=duration)
-          # Format times in local timezone
-          start_local = start_time.astimezone().strftime("%H:%M")
-          end_local = end_time.astimezone().strftime("%H:%M")
-          time_str = f"{start_local} - {end_local} "
+          if duration:
+            end_time = start_time + timedelta(minutes=duration)
+            # Format times in local timezone
+            start_local = start_time.astimezone().strftime("%H:%M")
+            end_local = end_time.astimezone().strftime("%H:%M")
+            time_str = f"{start_local} - {end_local} "
 
-    # Format task line
-    project_id = task.get("project_id")
-    project_name = project_names.get(project_id, "")
-    content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
-    class_str = create_class_string(content)
-    task_line = f"- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
-    formatted_tasks.append(task_line)
+      # Format task line
+      project_id = task.get("project_id")
+      project_name = project_names.get(project_id, "")
+      content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
 
-    # Add any children
-    if task_id in child_tasks:
-      # Sort children using the same criteria as parents
-      children = sorted(child_tasks[task_id], key=sort_key)
-      for child in children:
-        checkbox = "x" if child.get("completed", False) else " "
-        priority = child.get("priority", 1)
-        priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
+      # Create class string from content
+      class_str = create_class_string(content)
 
-        # Get time information for child task
-        time_str = ""
-        if child.get("due") and child["due"].get("datetime"):
-          start_time = datetime.fromisoformat(child["due"]["datetime"].replace('Z', '+00:00'))
-          task_date = start_time.strftime("%Y-%m-%d")
-          if task_date == today:  # Only show times for today's tasks
-            # Handle duration more safely
-            duration = 0
-            if isinstance(child.get("duration"), dict):
-              duration = child["duration"].get("amount", 0)
-            elif isinstance(child.get("duration"), (int, str)):
-              duration = int(child["duration"])
+      task_line = f"- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{task['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+      formatted_tasks.append(task_line)
 
-            if duration:
-              end_time = start_time + timedelta(minutes=duration)
-              # Format times in local timezone
-              start_local = start_time.astimezone().strftime("%H:%M")
-              end_local = end_time.astimezone().strftime("%H:%M")
-              time_str = f"{start_local} - {end_local} "
+      # Add any children
+      if task_id in child_tasks:
+        for child in child_tasks[task_id]:
+          checkbox = "x" if child.get("completed", False) else " "
+          priority = child.get("priority", 1)
+          priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
-        content = child.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
-        class_str = create_class_string(content)
-        child_line = f"\t- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{child['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
-        formatted_tasks.append(child_line)
+          # Get time information for child task
+          time_str = ""
+          if child.get("due") and child["due"].get("datetime"):
+            start_time = datetime.fromisoformat(child["due"]["datetime"].replace('Z', '+00:00'))
+            task_date = start_time.strftime("%Y-%m-%d")
+            if task_date == today:  # Only show times for today's tasks
+              # Handle duration more safely
+              duration = 0
+              if isinstance(child.get("duration"), dict):
+                duration = child["duration"].get("amount", 0)
+              elif isinstance(child.get("duration"), (int, str)):
+                duration = int(child["duration"])
+
+              if duration:
+                end_time = start_time + timedelta(minutes=duration)
+                # Format times in local timezone
+                start_local = start_time.astimezone().strftime("%H:%M")
+                end_local = end_time.astimezone().strftime("%H:%M")
+                time_str = f"{start_local} - {end_local} "
+
+          content = child.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
+          class_str = create_class_string(content)
+          child_line = f"\t- [{checkbox}] {time_str}{priority_tag}<span data-id=\"{child['id']}\" data-project=\"{project_name}\" class=\"{class_str}\"></span>{content}"
+          formatted_tasks.append(child_line)
 
   return "\n".join(formatted_tasks)
 
-def read_existing_note(file_path: str) -> Dict[str, any]:
-  """Read existing note and return both tasks and other content."""
+def read_existing_note(file_path: str) -> List[Dict]:
   if not os.path.exists(file_path):
-    return {"tasks": [], "content": "", "sections": {}}
+    return []
 
   with open(file_path, 'r', encoding='utf-8') as f:
-    content = f.read()
+    content = f.readlines()
 
-  # Split content into sections
-  sections = {}
-  current_section = "header"
-  current_content = []
-
-  for line in content.split('\n'):
-    if line.startswith('## '):
-      current_section = line[3:].strip()
-      current_content = []
-    else:
-      current_content.append(line)
-    if current_section not in sections:
-      sections[current_section] = []
-    sections[current_section] = current_content
-
-  # Extract tasks
   tasks = []
-  task_pattern = re.compile(r'- \[.\] .*?<span data-id="(\d+)".*?>(.*?)</span>(.*)')
-  for section in sections.values():
-    for line in section:
-      match = task_pattern.search(line)
-      if match:
-        task_id = match.group(1)
-        task_content = match.group(2) + match.group(3)  # Include any modifications after the span
-        tasks.append({
-          "id": task_id,
-          "content": task_content,
-          "line": line.strip(),
-          "completed": '[x]' in line
-        })
+  task_pattern = re.compile(r'- \[.\] <span data-id="(\d+)">(.*?)</span>')
+  for line in content:
+    match = task_pattern.search(line)
+    if match:
+      task_id = match.group(1)
+      task_content = match.group(2)
+      tasks.append({"id": task_id, "content": task_content, "line": line.strip()})
 
-  return {
-    "tasks": tasks,
-    "content": content,
-    "sections": sections
-  }
+  return tasks
 
 def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
   for note_task in note_tasks:
@@ -695,45 +651,34 @@ def create_daily_note(dry_run: bool = False):
 
   full_path = f"{base_path}/{year}/{month}/{day}, {weekday}.md"
 
-  # Read existing note content
-  existing_note = read_existing_note(full_path)
-  existing_tasks = existing_note["tasks"]
-  existing_sections = existing_note["sections"]
+  # Check if note exists and read existing tasks
+  existing_tasks = read_existing_note(full_path)
 
-  # Format new content from Todoist
+  # Get today's tasks (including completed)
   tasks = get_todoist_tasks()
+  task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
+
+  # Get future tasks
   future_tasks = get_future_tasks()
   formatted_future = format_todoist_tasks(future_tasks)
+
+  # Get backlog tasks
   backlog_tasks = get_backlog_tasks()
   formatted_backlog = format_todoist_tasks(backlog_tasks)
 
-  # Preserve existing task modifications
-  task_updates = {}
-  for existing_task in existing_tasks:
-    task_id = existing_task["id"]
-    task_updates[task_id] = existing_task["line"]
+  # Sync tasks with Todoist
+  sync_tasks_with_todoist(existing_tasks, tasks)
 
-  # Update formatted tasks with preserved modifications
-  updated_tasks = []
-  for line in formatted_tasks.split('\n'):
-    task_match = re.search(r'<span data-id="(\d+)"', line)
-    if task_match:
-      task_id = task_match.group(1)
-      if task_id in task_updates:
-        updated_tasks.append(task_updates[task_id])
-        continue
-    updated_tasks.append(line)
+  # Format weekday and month names for the header
+  weekday_capitalized = weekday.capitalize()
+  month_name = now.strftime("%B")
 
-  formatted_tasks = '\n'.join(updated_tasks)
+  # Update sync time message to use 24-hour format
+  sync_time = datetime.now().strftime('%H:%M')
+  sync_message = f"Synkronoitu viimeksi klo {sync_time}. Tehtäviä tänään: {len(tasks)}."
 
-  # Preserve any custom content in sections
-  custom_content = {}
-  for section, lines in existing_sections.items():
-    if section not in ["Päivän tehtävät", "Myöhemmin", "Backlog"]:
-      custom_content[section] = '\n'.join(lines)
-
-  # Create the base content
+  # Create the content
   content = f"""# {weekday_capitalized}, {now.day}. {month_name}ta
 
 {sync_message}
@@ -752,11 +697,6 @@ def create_daily_note(dry_run: bool = False):
 ## Backlog
 
 {formatted_backlog}"""
-
-  # Add preserved custom sections
-  for section, section_content in custom_content.items():
-    if section_content.strip():
-      content += f"\n\n## {section}\n\n{section_content}"
 
   # Write the content to file
   with open(full_path, 'w', encoding='utf-8') as f:
