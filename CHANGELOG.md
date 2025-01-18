@@ -3,6 +3,7 @@
 * Add colors for blocks via CSS
 * Add checkbox styles
 * Preserve custom sections in daily note
+* Sort tasks in this order: 1. priority, 2. time, 3. creation date (newest first)
 
 ### 1.0.5: 2025-01-16
 
