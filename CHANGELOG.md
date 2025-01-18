@@ -2,6 +2,7 @@
 
 * Add colors for blocks via CSS
 * Add checkbox styles
+* Preserve custom sections in daily note
 
 ### 1.0.5: 2025-01-16
 

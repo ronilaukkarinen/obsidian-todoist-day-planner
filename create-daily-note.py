@@ -259,23 +259,50 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
 
   return "\n".join(formatted_tasks)
 
-def read_existing_note(file_path: str) -> List[Dict]:
+def read_existing_note(file_path: str) -> Dict[str, any]:
+  """Read existing note and return both tasks and other content."""
   if not os.path.exists(file_path):
-    return []
+    return {"tasks": [], "content": "", "sections": {}}
 
   with open(file_path, 'r', encoding='utf-8') as f:
-    content = f.readlines()
+    content = f.read()
 
+  # Split content into sections
+  sections = {}
+  current_section = "header"
+  current_content = []
+
+  for line in content.split('\n'):
+    if line.startswith('## '):
+      current_section = line[3:].strip()
+      current_content = []
+    else:
+      current_content.append(line)
+    if current_section not in sections:
+      sections[current_section] = []
+    sections[current_section] = current_content
+
+  # Extract tasks
   tasks = []
-  task_pattern = re.compile(r'- \[.\] <span data-id="(\d+)">(.*?)</span>')
-  for line in content:
-    match = task_pattern.search(line)
-    if match:
-      task_id = match.group(1)
-      task_content = match.group(2)
-      tasks.append({"id": task_id, "content": task_content, "line": line.strip()})
+  task_pattern = re.compile(r'- \[.\] .*?<span data-id="(\d+)".*?>(.*?)</span>(.*)')
+  for section in sections.values():
+    for line in section:
+      match = task_pattern.search(line)
+      if match:
+        task_id = match.group(1)
+        task_content = match.group(2) + match.group(3)  # Include any modifications after the span
+        tasks.append({
+          "id": task_id,
+          "content": task_content,
+          "line": line.strip(),
+          "completed": '[x]' in line
+        })
 
-  return tasks
+  return {
+    "tasks": tasks,
+    "content": content,
+    "sections": sections
+  }
 
 def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
   for note_task in note_tasks:
@@ -651,34 +678,45 @@ def create_daily_note(dry_run: bool = False):
 
   full_path = f"{base_path}/{year}/{month}/{day}, {weekday}.md"
 
-  # Check if note exists and read existing tasks
-  existing_tasks = read_existing_note(full_path)
+  # Read existing note content
+  existing_note = read_existing_note(full_path)
+  existing_tasks = existing_note["tasks"]
+  existing_sections = existing_note["sections"]
 
-  # Get today's tasks (including completed)
+  # Format new content from Todoist
   tasks = get_todoist_tasks()
-  task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
-
-  # Get future tasks
   future_tasks = get_future_tasks()
   formatted_future = format_todoist_tasks(future_tasks)
-
-  # Get backlog tasks
   backlog_tasks = get_backlog_tasks()
   formatted_backlog = format_todoist_tasks(backlog_tasks)
 
-  # Sync tasks with Todoist
-  sync_tasks_with_todoist(existing_tasks, tasks)
+  # Preserve existing task modifications
+  task_updates = {}
+  for existing_task in existing_tasks:
+    task_id = existing_task["id"]
+    task_updates[task_id] = existing_task["line"]
 
-  # Format weekday and month names for the header
-  weekday_capitalized = weekday.capitalize()
-  month_name = now.strftime("%B")
+  # Update formatted tasks with preserved modifications
+  updated_tasks = []
+  for line in formatted_tasks.split('\n'):
+    task_match = re.search(r'<span data-id="(\d+)"', line)
+    if task_match:
+      task_id = task_match.group(1)
+      if task_id in task_updates:
+        updated_tasks.append(task_updates[task_id])
+        continue
+    updated_tasks.append(line)
 
-  # Update sync time message to use 24-hour format
-  sync_time = datetime.now().strftime('%H:%M')
-  sync_message = f"Synkronoitu viimeksi klo {sync_time}. Tehtäviä tänään: {len(tasks)}."
+  formatted_tasks = '\n'.join(updated_tasks)
 
-  # Create the content
+  # Preserve any custom content in sections
+  custom_content = {}
+  for section, lines in existing_sections.items():
+    if section not in ["Päivän tehtävät", "Myöhemmin", "Backlog"]:
+      custom_content[section] = '\n'.join(lines)
+
+  # Create the base content
   content = f"""# {weekday_capitalized}, {now.day}. {month_name}ta
 
 {sync_message}
@@ -697,6 +735,11 @@ def create_daily_note(dry_run: bool = False):
 ## Backlog
 
 {formatted_backlog}"""
+
+  # Add preserved custom sections
+  for section, section_content in custom_content.items():
+    if section_content.strip():
+      content += f"\n\n## {section}\n\n{section_content}"
 
   # Write the content to file
   with open(full_path, 'w', encoding='utf-8') as f:
