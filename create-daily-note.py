@@ -304,13 +304,20 @@ def read_existing_note(file_path: str) -> List[Dict]:
     content = f.readlines()
 
   tasks = []
-  task_pattern = re.compile(r'- \[.\] <span data-id="(\d+)">(.*?)</span>')
+  # Updated regex to capture completion status and full line
+  task_pattern = re.compile(r'- \[([ x])\] .*?<span data-id="(\d+)".*?>(.*?)</span>')
   for line in content:
     match = task_pattern.search(line)
     if match:
-      task_id = match.group(1)
-      task_content = match.group(2)
-      tasks.append({"id": task_id, "content": task_content, "line": line.strip()})
+      completed = match.group(1) == 'x'
+      task_id = match.group(2)
+      task_content = match.group(3)
+      tasks.append({
+        "id": task_id,
+        "content": task_content,
+        "completed": completed,
+        "line": line.strip()
+      })
 
   return tasks
 
@@ -327,32 +334,88 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
 
       if note_task_id == str(todoist_task_id):
         # Compare and sync changes
+        needs_update = False
+        updates = {}
+
+        # Check content changes
         if note_task["content"] != todoist_task["content"]:
-          print(f"Updating Todoist task {todoist_task_id}: {note_task['content']}")  # Debug line
-          update_todoist_task(todoist_task_id, note_task["content"])
+          updates["content"] = note_task["content"]
+          needs_update = True
 
-def update_todoist_task(task_id: str, new_content: str):
+        # Check completion status changes
+        note_completed = note_task.get("completed", False)
+        todoist_completed = todoist_task.get("completed", False)
+        if note_completed != todoist_completed:
+          if note_completed:
+            close_todoist_task(todoist_task_id)
+          else:
+            reopen_todoist_task(todoist_task_id)
+
+        # Update content if needed
+        if needs_update:
+          update_todoist_task(todoist_task_id, updates)
+
+def close_todoist_task(task_id: str):
+  """Mark a Todoist task as completed."""
   api_key = os.getenv('TODOIST_API_KEY')
-  if not api_key:
-    raise ValueError("TODOIST_API_KEY not set in .env file")
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
 
+  try:
+    response = requests.post(
+      f"https://api.todoist.com/rest/v2/tasks/{task_id}/close",
+      headers=headers
+    )
+    if response.status_code == 204:
+      log_info(f"Task {task_id} marked as completed")
+    else:
+      print(colored(f"Failed to complete task {task_id}: {response.status_code}", 'red'))
+    response.raise_for_status()
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error completing task: {e}", 'red'))
+
+def reopen_todoist_task(task_id: str):
+  """Reopen a completed Todoist task."""
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {
+    "Authorization": f"Bearer {api_key}"
+  }
+
+  try:
+    response = requests.post(
+      f"https://api.todoist.com/rest/v2/tasks/{task_id}/reopen",
+      headers=headers
+    )
+    if response.status_code == 204:
+      log_info(f"Task {task_id} reopened")
+    else:
+      print(colored(f"Failed to reopen task {task_id}: {response.status_code}", 'red'))
+    response.raise_for_status()
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error reopening task: {e}", 'red'))
+
+def update_todoist_task(task_id: str, updates: Dict):
+  """Update a Todoist task with the given updates."""
+  api_key = os.getenv('TODOIST_API_KEY')
   headers = {
     "Authorization": f"Bearer {api_key}",
     "Content-Type": "application/json"
   }
-  data = {
-    "content": new_content
-  }
-  response = requests.post(
-    f"https://api.todoist.com/rest/v2/tasks/{task_id}",
-    headers=headers,
-    json=data
-  )
-  if response.status_code == 204:
-    print(f"Task {task_id} updated successfully.")
-  else:
-    print(f"Failed to update task {task_id}: {response.status_code} {response.text}")
-  response.raise_for_status()
+
+  try:
+    response = requests.post(
+      f"https://api.todoist.com/rest/v2/tasks/{task_id}",
+      headers=headers,
+      json=updates
+    )
+    if response.status_code == 204:
+      log_info(f"Task {task_id} updated successfully")
+    else:
+      print(colored(f"Failed to update task {task_id}: {response.status_code}", 'red'))
+    response.raise_for_status()
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error updating task: {e}", 'red'))
 
 def get_backlog_tasks() -> List[Dict]:
   api_key = os.getenv('TODOIST_API_KEY')
