@@ -946,13 +946,26 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     for item in completed_data.get("items", []):
       completed_at = item.get("completed_at", "")
       if completed_at.startswith(today):
-        completed_tasks.append({
-          "id": item["task_id"],
-          "content": item["content"],
-          "completed": True,
-          "priority": item.get("priority", 1),
-          "project_id": item.get("project_id")
-        })
+        # Try to get original task data to include all properties
+        task_response = requests.get(
+          f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
+          headers=headers
+        )
+
+        if task_response.status_code == 200:
+          task_data = task_response.json()
+          task_data['completed'] = True
+          completed_tasks.append(task_data)
+        else:
+          # Fallback to basic task data if original not available
+          completed_tasks.append({
+            "id": item["task_id"],
+            "content": item["content"],
+            "completed": True,
+            "priority": item.get("priority", 1),
+            "project_id": item.get("project_id"),
+            "parent_id": item.get("parent_id")
+          })
 
     return completed_tasks
   except requests.exceptions.RequestException as e:
