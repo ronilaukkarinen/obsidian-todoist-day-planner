@@ -116,20 +116,39 @@
 
   /* Regular blocks */
   .content:not(:has(.calendar-name)) {
-    background-color: var(--color-dark-nightblue-grey) !important;
+    --block-background-color: var(--color-dark-nightblue-grey);
+    background-color: var(--block-background-color) !important;
     color: var(--color-light-mint);
   }
 
   .content:not(:has(.calendar-name)):hover,
   .content:not(:has(.calendar-name)):focus {
-    background-color: var(--color-dark-nightblue-grey-hover) !important;
+    --block-background-color: var(--color-dark-nightblue-grey-hover);
+    background-color: var(--block-background-color) !important;
+  }
+
+  .content {
+    transition: background-color 50ms;
+    padding: 6px 8px;
+  }
+
+  .content *,
+  .content a {
+    color: var(--color-light-mint);
+    font-size: 12px;
+  }
+
+  .content .external-link {
+    background: none !important;
+    padding-inline-end: 0 !important;
   }
 
   /* Calendar blocks */
   .content .remote-task-content:has(.calendar-name) {
-    background-color: var(--color-dark-blue-grey);
+    --block-background-color: var(--color-dark-blue-grey);
+    background-color: var(--block-background-color) !important;
     color: var(--color-light-mint);
-    transition: background-color 100ms ease-in-out;
+    transition: background-color 50ms;
 
     .ribbon {
       background-color: var(--color-robins-egg);
@@ -138,26 +157,60 @@
 
   .content:hover .remote-task-content:has(.calendar-name),
   .content:focus .remote-task-content:has(.calendar-name) {
-    background-color: var(--color-deep-teal);
+    --block-background-color: var(--color-deep-teal);
+    background-color: var(--block-background-color) !important;
   }
 
   /* Blocks containing classes that start with "obsidian" */
   .content:has([class^="obsidian"]) {
-    background-color: var(--color-dark-purple) !important;
+    --block-background-color: var(--color-dark-purple);
+    background-color: var(--block-background-color) !important;
   }
 
   .content:has([class^="obsidian"]):hover,
   .content:has([class^="obsidian"]):focus {
-    background-color: var(--color-dark-purple-hover) !important;
+    --block-background-color: var(--color-dark-purple-hover);
+    background-color: var(--block-background-color) !important;
   }
 
   .content:has([class^="pelaaminen"]) {
-    background-color: var(--color-dark-green) !important;
+    --block-background-color: var(--color-dark-green);
+    background-color: var(--block-background-color) !important;
   }
 
   .content:has([class^="pelaaminen"]):hover,
   .content:has([class^="pelaaminen"]):focus {
-    background-color: var(--color-dark-green-hover) !important;
+    --block-background-color: var(--color-dark-green-hover);
+    background-color: var(--block-background-color) !important;
+  }
+
+  .content:has([d^="p1"]) {
+    --block-background-color: #673772;
+    background-color: var(--block-background-color) !important;
+  }
+
+  .content:has([d^="p1"]):hover,
+  .content:has([d^="p1"]):focus {
+    --block-background-color: #823f92;
+    background-color: var(--block-background-color) !important;
+  }
+
+  /* Fade down bottom of block */
+  .content::after {
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      var(--block-background-color) 90%,
+      var(--block-background-color) 100%
+    );
+    content: '';
+    display: block;
+    height: 30px;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    opacity: 1;
   }
 }
 
@@ -169,7 +222,7 @@ i[d="p2"] {
   color: transparent;
   display: inline-block;
   /* Hide the text content */
-  font-size: 0;
+  font-size: 0 !important;
   height: 16px;
   overflow: hidden;
   position: relative;
@@ -183,4 +236,53 @@ i[d="p1"] {
 
 i[d="p2"] {
   background-image: url("data:image/svg+xml, %3Csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8 6.5V1.5L1.5 6.5L8 14.5V6.5Z' fill='%23BF5609'%3E%3C/path%3E%3Cpath d='M8 6.5V1.5L14.5 6.5L8 14.5V6.5Z' fill='%23FFA800'%3E%3C/path%3E%3Cpath d='M4.5 6.5L8 1.5L11.5 6.5L8 14.5L4.5 6.5Z' fill='%23FF9900'%3E%3C/path%3E%3Cpath d='M11.5 6.5H4.5L8 14.5L11.5 6.5Z' fill='%23FFD18C'%3E%3C/path%3E%3Cpath d='M14.5 6.5H11.5L8 1.5L14.5 6.5Z' fill='%23FFD18C'%3E%3C/path%3E%3Cpath d='M1.5 6.5H4.5L8 1.5L1.5 6.5Z' fill='%23E8760E'%3E%3C/path%3E%3C/svg%3E");
+}
+
+/* First, let's define our SVG icons as background images */
+@svg-load checkbox-standard url("data:image/svg+xml;charset=utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect x='1' y='1' width='14' height='14' rx='3' ry='3' fill='none' stroke='rgba(175,175,175,0.5)' stroke-width='1.5'/></svg>") {
+}
+
+@svg-load checkbox-mark url("data:image/svg+xml;charset=utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><path d='M4 8l3 3l5-5' stroke='white' stroke-width='2' fill='none'/></svg>") {
+}
+
+/* Base checkbox styling */
+.task-list-item-checkbox {
+  border-radius: 6.5px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 16px;
+  height: 16px;
+  position: relative !important;
+  cursor: pointer !important;
+  border: none !important;
+  background-color: transparent !important;
+  background-image: url("data:image/svg+xml;charset=utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect x='1' y='1' width='14' height='14' rx='3' ry='3' fill='none' stroke='rgba(175,175,175,0.5)' stroke-width='1.5'/></svg>") !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 16px 16px !important;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border: 1px solid rgba(175, 175, 175, 0.9) !important;
+  top: 2px !important;
+  position: relative !important;
+}
+
+.task-list-item-checkbox:hover {
+  background-image: svg-load(checkbox-standard) !important;
+  filter: brightness(1.2) !important;
+}
+
+.task-list-item-checkbox:checked {
+  background-color: rgba(175, 175, 175, 0.9) !important;
+  border-radius: 6.5px !important;
+  background-image: svg-load(checkbox-mark) !important;
+}
+
+.task-list-item-checkbox:checked:hover {
+  background-color: rgba(175, 175, 175, 1) !important;
+}
+
+.task-list-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
 }

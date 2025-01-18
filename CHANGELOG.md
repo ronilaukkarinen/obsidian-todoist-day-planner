@@ -1,3 +1,8 @@
+### 1.0.6: 2025-01-18
+
+* Add colors for blocks via CSS
+* Add checkbox styles
+
 ### 1.0.5: 2025-01-16
 
 * Make Google Calendar sync more reliable by adding a log file to compare with
