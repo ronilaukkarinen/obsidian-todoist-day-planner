@@ -12,6 +12,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import argparse
+import uuid
 
 # Load environment variables
 load_dotenv()
@@ -232,6 +233,7 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
   # Add root tasks and their children in order
   for task in root_tasks:
     task_id = str(task['id'])
+    # Use the completion status from the task data
     checkbox = "x" if task.get("completed", False) else " "
     priority = task.get("priority", 1)
     priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
@@ -264,10 +266,10 @@ def format_todoist_tasks(tasks: List[Dict]) -> str:
 
     # Add any children
     if task_id in child_tasks:
-      # Sort children using the same criteria
       children = sorted(child_tasks[task_id], key=sort_key)
       for child in children:
-        checkbox = "x" if child.get("completed", False) else " "
+        # Use the completion status from the child task data
+        checkbox = "x" if child.get("completed", False) else " "  # This is the key change
         priority = child.get("priority", 1)
         priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
@@ -325,21 +327,32 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
   for note_task in note_tasks:
     note_task_id = note_task.get("id")
     if not note_task_id:
-      continue  # Skip tasks without an ID
+      continue
 
     for todoist_task in todoist_tasks:
       todoist_task_id = todoist_task.get("id")
       if not todoist_task_id:
-        continue  # Skip tasks without an ID
+        continue
 
       if note_task_id == str(todoist_task_id):
         # Compare and sync changes
         needs_update = False
         updates = {}
 
-        # Check content changes
-        if note_task["content"] != todoist_task["content"]:
-          updates["content"] = note_task["content"]
+        # Check content changes - strip HTML tags and markdown links for comparison
+        note_content = re.sub(r'<[^>]+>', '', note_task["content"]).strip()
+        note_content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', note_content)  # Remove [[wiki links]]
+        note_content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', note_content)  # Remove [text](url)
+
+        todoist_content = re.sub(r'<[^>]+>', '', todoist_task["content"]).strip()
+        todoist_content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', todoist_content)
+        todoist_content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', todoist_content)
+
+        if note_content != todoist_content:
+          log_info(f"Content differs for task {note_task_id}:")
+          log_info(f"  Note content: '{note_content}'")
+          log_info(f"  Todoist content: '{todoist_content}'")
+          updates["content"] = note_content
           needs_update = True
 
         # Check completion status changes
@@ -351,15 +364,20 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict]):
           else:
             reopen_todoist_task(todoist_task_id)
 
-        # Update content if needed
-        if needs_update:
-          update_todoist_task(todoist_task_id, updates)
+        # Update content if needed and there are actual changes
+        if needs_update and updates:
+          # Validate content before sending
+          if "content" in updates and updates["content"].strip():
+            update_todoist_task(todoist_task_id, updates)
+          else:
+            log_info(f"Skipping update for task {note_task_id} - empty content")
 
 def close_todoist_task(task_id: str):
   """Mark a Todoist task as completed."""
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {
-    "Authorization": f"Bearer {api_key}"
+    "Authorization": f"Bearer {api_key}",
+    "X-Request-Id": str(uuid.uuid4())
   }
 
   try:
@@ -371,6 +389,8 @@ def close_todoist_task(task_id: str):
       log_info(f"Task {task_id} marked as completed")
     else:
       print(colored(f"Failed to complete task {task_id}: {response.status_code}", 'red'))
+      if response.text:
+        print(colored(f"Response: {response.text}", 'red'))
     response.raise_for_status()
   except requests.exceptions.RequestException as e:
     print(colored(f"Error completing task: {e}", 'red'))
@@ -379,7 +399,8 @@ def reopen_todoist_task(task_id: str):
   """Reopen a completed Todoist task."""
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {
-    "Authorization": f"Bearer {api_key}"
+    "Authorization": f"Bearer {api_key}",
+    "X-Request-Id": str(uuid.uuid4())
   }
 
   try:
@@ -391,6 +412,8 @@ def reopen_todoist_task(task_id: str):
       log_info(f"Task {task_id} reopened")
     else:
       print(colored(f"Failed to reopen task {task_id}: {response.status_code}", 'red'))
+      if response.text:
+        print(colored(f"Response: {response.text}", 'red'))
     response.raise_for_status()
   except requests.exceptions.RequestException as e:
     print(colored(f"Error reopening task: {e}", 'red'))
@@ -400,8 +423,19 @@ def update_todoist_task(task_id: str, updates: Dict):
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {
     "Authorization": f"Bearer {api_key}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-Request-Id": str(uuid.uuid4())
   }
+
+  # Validate updates before sending
+  if "content" in updates:
+    updates["content"] = updates["content"].strip()
+    if not updates["content"]:
+      log_info(f"Skipping update for task {task_id} - empty content after stripping")
+      return
+
+  log_info(f"Sending update for task {task_id}:")
+  log_info(f"  Updates: {updates}")
 
   try:
     response = requests.post(
@@ -409,10 +443,12 @@ def update_todoist_task(task_id: str, updates: Dict):
       headers=headers,
       json=updates
     )
-    if response.status_code == 204:
+    if response.status_code in [200, 204]:
       log_info(f"Task {task_id} updated successfully")
     else:
       print(colored(f"Failed to update task {task_id}: {response.status_code}", 'red'))
+      if response.text:
+        print(colored(f"Response: {response.text}", 'red'))
     response.raise_for_status()
   except requests.exceptions.RequestException as e:
     print(colored(f"Error updating task: {e}", 'red'))
@@ -728,7 +764,6 @@ def create_daily_note(dry_run: bool = False):
     print(colored("Aborting note creation due to Todoist API issues", 'red'))
     return
 
-  # Rest of the function remains the same...
   try:
     sync_google_calendar_to_todoist(dry_run=dry_run)
   except Exception as e:
@@ -756,6 +791,13 @@ def create_daily_note(dry_run: bool = False):
 
   # Get today's tasks (including completed)
   tasks = get_todoist_tasks()
+
+  # Sync tasks with Todoist and update our tasks list with any changes
+  sync_tasks_with_todoist(existing_tasks, tasks)
+
+  # Get fresh task list after sync to include completion status changes
+  tasks = get_todoist_tasks()
+
   task_count = len(tasks)
   formatted_tasks = format_todoist_tasks(tasks)
 
@@ -766,9 +808,6 @@ def create_daily_note(dry_run: bool = False):
   # Get backlog tasks
   backlog_tasks = get_backlog_tasks()
   formatted_backlog = format_todoist_tasks(backlog_tasks)
-
-  # Sync tasks with Todoist
-  sync_tasks_with_todoist(existing_tasks, tasks)
 
   # Format weekday and month names for the header
   weekday_capitalized = weekday.capitalize()
