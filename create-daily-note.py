@@ -275,7 +275,7 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
           time_str = f"{start_local} - {end_local} "
 
     # Format task line
-    project_id = task.get("project_id")
+    project_id = str(task.get("project_id")) if task.get("project_id") else None
     project_name = project_names.get(project_id, "")
     content = task.get("content", "").replace(" @Google-kalenterin tapahtuma", "")
     class_str = create_class_string(content)
@@ -287,7 +287,7 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
       children = sorted(child_tasks[task_id], key=sort_key)
       for child in children:
         # Use the completion status from the child task data
-        checkbox = "x" if child.get("completed", False) else " "  # This is the key change
+        checkbox = "x" if child.get("completed", False) else " "
         priority = child.get("priority", 1)
         priority_tag = f'<i d="p{5-priority}">p{5-priority}</i> ' if priority > 1 else ""
 
@@ -958,7 +958,7 @@ def create_daily_note(dry_run: bool = False):
 {sync_message}
 
 > [!NOTE] Note to self: Ajo-ohje itselleni
-> Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla. Kirjoita päivän muistiinpanot myös alle.
+> Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla.
 
 ## Päivän tehtävät
 
@@ -1015,76 +1015,30 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     response.raise_for_status()
     completed_data = response.json()
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    # Get today's date in YYYY-MM-DD format, considering local timezone
+    today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    log_info(f"Checking for tasks completed on {today}")
     completed_tasks = []
 
-    # Get today's tasks to check for parent tasks
-    today_response = requests.get(
-      "https://api.todoist.com/rest/v2/tasks",
-      headers=headers,
-      params={"filter": "today"}
-    )
-    today_response.raise_for_status()
-    today_tasks = today_response.json()
-    today_task_ids = {str(task['id']) for task in today_tasks}
-
-    log_info(f"Processing completed tasks for today ({today})")
-    log_info(f"Today's task IDs: {today_task_ids}")
-
-    # For each completed task from today
+    # Process each completed task
     for item in completed_data.get("items", []):
-      completed_at = item.get("completed_at", "")
-      if completed_at.startswith(today):
-        log_info(f"\nProcessing task ID {item['task_id']}: {item.get('content', '')}")
-        log_info(f"  Completed at: {completed_at}")
+      # Convert completed_at to local timezone before comparing
+      completed_at = datetime.fromisoformat(
+        item.get("completed_at").replace('Z', '+00:00')
+      ).astimezone().strftime("%Y-%m-%d")
 
-        # Try to get original task data to include all properties
-        task_response = requests.get(
-          f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
-          headers=headers
-        )
+      if completed_at == today:
+        log_info(f"\nProcessing task ID {item['id']}: {item.get('content')}")
+        log_info(f"  Completed at: {item.get('completed_at')} (local: {completed_at})")
+        log_info("  Task details:")
+        log_info(f"    ID: {item.get('id')}")
+        log_info(f"    Content: {item.get('content')}")
+        log_info(f"    Parent ID: {item.get('parent_id')}")
 
-        if task_response.status_code == 200:
-          task_data = task_response.json()
-          parent_id = str(task_data.get('parent_id')) if task_data.get('parent_id') else None
-          task_id = str(task_data['id'])
-
-          log_info(f"  Task details:")
-          log_info(f"    ID: {task_id}")
-          log_info(f"    Content: {task_data.get('content')}")
-          log_info(f"    Parent ID: {parent_id}")
-          log_info(f"    Is parent scheduled for today: {parent_id in today_task_ids if parent_id else 'N/A'}")
-
-          if not parent_id or (parent_id and parent_id not in today_task_ids):
-            task_data['completed'] = True
-            completed_tasks.append(task_data)
-            log_info(f"  ✅ Added to completed tasks list")
-          else:
-            log_info(f"  ❌ Skipped - subtask of today's task")
-        else:
-          log_info(f"  Using fallback task data")
-          task_data = {
-            "id": item["task_id"],
-            "content": item["content"],
-            "completed": True,
-            "priority": item.get("priority", 1),
-            "project_id": item.get("project_id"),
-            "parent_id": item.get("parent_id")
-          }
-          parent_id = str(task_data.get('parent_id')) if task_data.get('parent_id') else None
-          task_id = str(task_data['id'])
-
-          log_info(f"  Fallback task details:")
-          log_info(f"    ID: {task_id}")
-          log_info(f"    Content: {task_data.get('content')}")
-          log_info(f"    Parent ID: {parent_id}")
-          log_info(f"    Is parent scheduled for today: {parent_id in today_task_ids if parent_id else 'N/A'}")
-
-          if not parent_id or (parent_id and parent_id not in today_task_ids):
-            completed_tasks.append(task_data)
-            log_info(f"  ✅ Added to completed tasks list")
-          else:
-            log_info(f"  ❌ Skipped - subtask of today's task")
+        # Mark task as completed and add it to the list
+        item['completed'] = True
+        completed_tasks.append(item)
+        log_info(f"  ✅ Added to completed tasks list")
 
     log_info(f"\nFinal completed tasks list ({len(completed_tasks)} tasks):")
     for task in completed_tasks:
