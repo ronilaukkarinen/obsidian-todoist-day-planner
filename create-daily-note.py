@@ -170,11 +170,21 @@ def create_class_string(content: str) -> str:
 
   return class_str.strip()
 
-def format_todoist_tasks(tasks: List[Dict]) -> str:
+def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
   # Get project names
   project_names = get_project_names()
   formatted_tasks = []
   today = datetime.now().strftime("%Y-%m-%d")
+
+  # Count active (non-completed) tasks
+  active_tasks = len([t for t in tasks if not t.get("completed", False)])
+
+  # Finnish pluralization for "tehtävä"
+  task_text = "tehtävä" if active_tasks == 1 else "tehtävää"
+  if is_today:
+    formatted_tasks.append(f"{active_tasks} {task_text} tänään.\n")
+  else:
+    formatted_tasks.append(f"{active_tasks} {task_text}.\n")
 
   # Create a dictionary to store parent-child relationships
   child_tasks = {}
@@ -835,15 +845,28 @@ def create_daily_note(dry_run: bool = False):
   tasks = get_todoist_tasks()
 
   task_count = len(tasks)
-  formatted_tasks = format_todoist_tasks(tasks)
+  formatted_tasks = format_todoist_tasks(tasks, is_today=True)
 
-  # Get future tasks
-  future_tasks = get_future_tasks()
-  formatted_future = format_todoist_tasks(future_tasks)
+  # Format tasks section
+  tasks_section = ""
+  if task_count > 0:
+    tasks_section = f"\n## Tehtävät\n{formatted_tasks}\n"
 
-  # Get backlog tasks
+  # Format backlog section
   backlog_tasks = get_backlog_tasks()
-  formatted_backlog = format_todoist_tasks(backlog_tasks)
+  backlog_count = len(backlog_tasks)
+  backlog_section = ""
+  if backlog_count > 0:
+    formatted_backlog = format_todoist_tasks(backlog_tasks, is_today=False)
+    backlog_section = f"\n## Backlog\n{formatted_backlog}\n"
+
+  # Format future tasks section
+  future_tasks = get_future_tasks()
+  future_count = len(future_tasks)
+  future_section = ""
+  if future_count > 0:
+    formatted_future = format_todoist_tasks(future_tasks, is_today=False)
+    future_section = f"\n## Tulevat tehtävät\n{formatted_future}\n"
 
   # Format weekday and month names for the header
   weekday_capitalized = weekday.capitalize()
@@ -851,7 +874,7 @@ def create_daily_note(dry_run: bool = False):
 
   # Update sync time message to use 24-hour format
   sync_time = datetime.now().strftime('%H:%M')
-  sync_message = f"Synkronoitu viimeksi klo {sync_time}. Tehtäviä tänään: {len(tasks)}."
+  sync_message = f"Synkronoitu viimeksi klo {sync_time}."
 
   # Create the content
   content = f"""# {weekday_capitalized}, {now.day}. {month_name}ta
