@@ -1004,10 +1004,9 @@ def get_todoist_project_id(project_name: str) -> str:
     return None
 
 def get_completed_tasks(headers: Dict) -> List[Dict]:
-  """Load previously completed tasks from today."""
   log_info("Fetching completed tasks...")
   try:
-    # Get completed tasks from sync API
+    # First get completed tasks from sync API
     response = requests.get(
       "https://api.todoist.com/sync/v9/completed/get_all",
       headers=headers
@@ -1015,34 +1014,36 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     response.raise_for_status()
     completed_data = response.json()
 
-    # Get today's date in YYYY-MM-DD format, considering local timezone
-    today = datetime.now().astimezone().strftime("%Y-%m-%d")
-    log_info(f"Checking for tasks completed on {today}")
+    today = datetime.now().strftime("%Y-%m-%d")
     completed_tasks = []
 
-    # Process each completed task
+    # For each completed task, fetch its original data
     for item in completed_data.get("items", []):
-      # Convert completed_at to local timezone before comparing
-      completed_at = datetime.fromisoformat(
-        item.get("completed_at").replace('Z', '+00:00')
-      ).astimezone().strftime("%Y-%m-%d")
+      completed_at = item.get("completed_at", "")
+      if completed_at.startswith(today):
+        # Try to get original task data
+        task_response = requests.get(
+          f"https://api.todoist.com/rest/v2/tasks/{item['task_id']}",
+          headers=headers
+        )
 
-      if completed_at == today:
-        log_info(f"\nProcessing task ID {item['id']}: {item.get('content')}")
-        log_info(f"  Completed at: {item.get('completed_at')} (local: {completed_at})")
-        log_info("  Task details:")
-        log_info(f"    ID: {item.get('id')}")
-        log_info(f"    Content: {item.get('content')}")
-        log_info(f"    Parent ID: {item.get('parent_id')}")
-
-        # Mark task as completed and add it to the list
-        item['completed'] = True
-        completed_tasks.append(item)
-        log_info(f"  ✅ Added to completed tasks list")
-
-    log_info(f"\nFinal completed tasks list ({len(completed_tasks)} tasks):")
-    for task in completed_tasks:
-      log_info(f"  - {task.get('content')} (ID: {task.get('id')}, Parent: {task.get('parent_id')})")
+        log_info(f"Original task response status: {task_response.status_code}")
+        if task_response.status_code == 200:
+          task_data = task_response.json()
+          log_info(f"Original task data: {task_data}")
+          task_data['completed'] = True
+          completed_tasks.append(task_data)
+        else:
+          log_info(f"Fallback: Using basic task data for {item['content']}")
+          # Fallback to basic task data if original not available
+          completed_tasks.append({
+            "content": item["content"],
+            "completed": True,
+            "priority": item.get("priority", 1),
+            "project_id": item.get("project_id"),
+            "parent_id": item.get("parent_id"),
+            "id": item.get("task_id")
+          })
 
     return completed_tasks
   except requests.exceptions.RequestException as e:

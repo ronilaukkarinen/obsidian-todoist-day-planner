@@ -1,3 +1,7 @@
+### 1.0.7: 2025-01-20
+
+* Fix times not visible in scheduled and completed Todoist tasks
+
 ### 1.0.6: 2025-01-18
 
 * Add colors for blocks via CSS
