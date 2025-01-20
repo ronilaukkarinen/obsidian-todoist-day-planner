@@ -1017,7 +1017,15 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     completed_tasks = []
 
-    # For each completed task, fetch its original data
+    # Get all tasks to find subtasks
+    all_response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers
+    )
+    all_response.raise_for_status()
+    all_tasks = all_response.json()
+
+    # For each completed task, fetch its original data and subtasks
     for item in completed_data.get("items", []):
       completed_at = item.get("completed_at", "")
       if completed_at.startswith(today):
@@ -1033,6 +1041,13 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
           log_info(f"Original task data: {task_data}")
           task_data['completed'] = True
           completed_tasks.append(task_data)
+
+          # Find and add any completed subtasks
+          for subtask in all_tasks:
+            if str(subtask.get('parent_id')) == str(item['task_id']):
+              subtask['completed'] = True
+              completed_tasks.append(subtask)
+              log_info(f"Added completed subtask: {subtask['content']}")
         else:
           log_info(f"Fallback: Using basic task data for {item['content']}")
           # Fallback to basic task data if original not available
