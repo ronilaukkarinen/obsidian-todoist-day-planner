@@ -1,6 +1,7 @@
 ### 1.0.7: 2025-01-20
 
 * Fix times not visible in scheduled and completed Todoist tasks
+* Fix completed subtasks not being added to the daily note
 
 ### 1.0.6: 2025-01-18
 
