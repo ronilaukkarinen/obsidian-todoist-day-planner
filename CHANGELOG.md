@@ -1,3 +1,8 @@
+### 1.0.8: 2025-01-29
+
+* Add sync stop message to the daily note, skip syncing if we have that in the note
+* Fix some tasks being scheduled for one year in the future
+
 ### 1.0.7: 2025-01-20
 
 * Fix times not visible in scheduled and completed Todoist tasks

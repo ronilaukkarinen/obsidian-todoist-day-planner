@@ -342,6 +342,20 @@ def read_existing_note(file_path: str) -> List[Dict]:
   return tasks
 
 def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], note_path: str):
+  # First check if sync is disabled in the note
+  try:
+    with open(note_path, 'r', encoding='utf-8') as f:
+      content = f.readlines()
+      # Look for sync stop message outside of blockquotes
+      for line in content:
+        if line.startswith('>'):  # Skip blockquote lines
+          continue
+        if "Synkronointi lopetettu" in line:
+          log_info("Sync disabled in note - skipping Todoist sync")
+          return
+  except FileNotFoundError:
+    pass  # Note doesn't exist yet, continue with sync
+
   # Get completed tasks with timestamps
   api_key = os.getenv('TODOIST_API_KEY')
   headers = {"Authorization": f"Bearer {api_key}"}
@@ -749,9 +763,15 @@ def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   if not start or not end:  # Skip full-day events
     return
 
-  # Convert to datetime objects and explicitly handle timezone
-  start_dt = datetime.fromisoformat(start.replace('Z', '+00:00')) - timedelta(hours=2)
-  end_dt = datetime.fromisoformat(end.replace('Z', '+00:00')) - timedelta(hours=2)
+  # Convert to datetime objects and handle timezone
+  start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+  end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
+
+  # Ensure dates are not too far in the future (e.g., not in 2026)
+  max_future_date = datetime.now() + timedelta(days=365)  # Max 1 year ahead
+  if start_dt > max_future_date:
+    log_info(f"Skipping event too far in future: {event['summary']} on {start_dt}")
+    return
 
   # Calculate duration in minutes
   duration = int((end_dt - start_dt).total_seconds() / 60)
@@ -958,7 +978,7 @@ def create_daily_note(dry_run: bool = False):
 {sync_message}
 
 > [!NOTE] Note to self: Ajo-ohje itselleni
-> Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla.
+> Tehtävät tulevat Todoistista, mutta niitä voi täällä aikatauluttaa kalenteriin kätevästi Day Plannerin avulla. Lisää tähän noteen viesti "Synkronointi lopetettu klo xx:xx" jos haluat, että muutoksia ei tuoda enää Todoistista.
 
 ## Päivän tehtävät
 
