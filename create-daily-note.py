@@ -906,16 +906,8 @@ def create_daily_note(dry_run: bool = False):
     print(colored("Aborting note creation due to Todoist API issues", 'red'))
     return
 
-  try:
-    sync_google_calendar_to_todoist(dry_run=dry_run)
-  except Exception as e:
-    print(colored(f"Error syncing calendar events: {e}", 'red'))
-
-  log_info("Creating daily note...")
-  # Get current date
+  # Get current date and build the path first
   now = datetime.now()
-
-  # Format the path components
   year = now.strftime("%Y")
   month = now.strftime("%m")
   day = now.strftime("%-d.%-m.%Y")
@@ -927,6 +919,27 @@ def create_daily_note(dry_run: bool = False):
     raise ValueError("OBSIDIAN_DAILY_NOTES_PATH not set in .env file")
 
   full_path = f"{base_path}/{year}/{month}/{day}, {weekday}.md"
+
+  # Check for sync stop message before doing any syncing
+  try:
+    if os.path.exists(full_path):
+      with open(full_path, 'r', encoding='utf-8') as f:
+        content = f.readlines()
+        for line in content:
+          if line.startswith('>'):  # Skip blockquote lines
+            continue
+          if "Synkronointi lopetettu" in line:
+            log_info("Sync disabled in note - skipping all syncing")
+            return
+  except FileNotFoundError:
+    pass  # Note doesn't exist yet, continue with sync
+
+  try:
+    sync_google_calendar_to_todoist(dry_run=dry_run)
+  except Exception as e:
+    print(colored(f"Error syncing calendar events: {e}", 'red'))
+
+  log_info("Creating daily note...")
 
   # Check if note exists and read existing tasks
   existing_tasks = read_existing_note(full_path)
