@@ -900,6 +900,22 @@ def check_todoist_api() -> bool:
     print(colored(f"Todoist API is not responding correctly: {e}", 'red'))
     return False
 
+def check_sync_disabled(note_path: str) -> bool:
+  """Check if sync is disabled in the note."""
+  try:
+    if os.path.exists(note_path):
+      with open(note_path, 'r', encoding='utf-8') as f:
+        content = f.readlines()
+        for line in content:
+          if line.startswith('>'):  # Skip blockquote lines
+            continue
+          if "Synkronointi lopetettu" in line:
+            log_info("Sync disabled in note - skipping sync")
+            return True
+  except FileNotFoundError:
+    pass  # Note doesn't exist yet
+  return False
+
 def create_daily_note(dry_run: bool = False):
   # First check if Todoist API is available
   if not check_todoist_api():
@@ -921,18 +937,8 @@ def create_daily_note(dry_run: bool = False):
   full_path = f"{base_path}/{year}/{month}/{day}, {weekday}.md"
 
   # Check for sync stop message before doing any syncing
-  try:
-    if os.path.exists(full_path):
-      with open(full_path, 'r', encoding='utf-8') as f:
-        content = f.readlines()
-        for line in content:
-          if line.startswith('>'):  # Skip blockquote lines
-            continue
-          if "Synkronointi lopetettu" in line:
-            log_info("Sync disabled in note - skipping all syncing")
-            return
-  except FileNotFoundError:
-    pass  # Note doesn't exist yet, continue with sync
+  if check_sync_disabled(full_path):
+    return
 
   try:
     sync_google_calendar_to_todoist(dry_run=dry_run)
