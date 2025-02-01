@@ -1,3 +1,7 @@
+### 1.0.9: 2025-02-01
+
+* Create directory structure if it doesn't exist
+
 ### 1.0.8: 2025-01-29
 
 * Add sync stop message to the daily note, skip syncing if we have that in the note

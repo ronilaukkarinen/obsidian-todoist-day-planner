@@ -1011,6 +1011,9 @@ def create_daily_note(dry_run: bool = False):
 
 {formatted_backlog}"""
 
+  # Create directory structure if it doesn't exist
+  os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
   # Write the content to file
   with open(full_path, 'w', encoding='utf-8') as f:
     f.write(content)
