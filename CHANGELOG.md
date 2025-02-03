@@ -1,3 +1,7 @@
+### 1.1.0: 2025-02-03
+
+* Disable date sync from Obsidian to Todoist as it causes issues
+
 ### 1.0.9: 2025-02-01
 
 * Create directory structure if it doesn't exist

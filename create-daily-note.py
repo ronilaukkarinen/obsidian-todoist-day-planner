@@ -374,139 +374,41 @@ def sync_tasks_with_todoist(note_tasks: List[Dict], todoist_tasks: List[Dict], n
       for item in completed_data.get("items", [])
     }
 
-    # Get time update history
-    time_response = requests.get(
-      "https://api.todoist.com/sync/v9/activity/get",
-      headers=headers,
-      params={"limit": 100}
-    )
-    time_response.raise_for_status()
-    activity_data = time_response.json()
-
-    # Create a map of task_id to last time modification
-    todoist_time_updates = {
-      str(event["object_id"]): datetime.fromisoformat(event["event_date"].replace('Z', '+00:00'))
-      for event in activity_data.get("events", [])
-      if event.get("object_type") == "item"
-      and event.get("event_type") == "updated"
-      and "due_date" in str(event.get("extra_data", {}))
-    }
-  except requests.exceptions.RequestException as e:
-    print(colored(f"Error fetching data: {e}", 'red'))
-    todoist_completion_times = {}
-    todoist_time_updates = {}
-
-  # Get note's last modification time and make it timezone-aware
-  try:
-    note_mtime = datetime.fromtimestamp(os.path.getmtime(note_path))
-    # Convert to UTC timezone-aware datetime
-    note_mtime = note_mtime.astimezone(timezone.utc)
-  except OSError:
-    note_mtime = None
-    log_info("Could not get note modification time")
-
-  for note_task in note_tasks:
-    note_task_id = note_task.get("id")
-    if not note_task_id:
-      continue
-
-    for todoist_task in todoist_tasks:
-      todoist_task_id = todoist_task.get("id")
-      if not todoist_task_id:
+    for note_task in note_tasks:
+      note_task_id = note_task.get("id")
+      if not note_task_id:
         continue
 
-      if note_task_id == str(todoist_task_id):
-        needs_update = False
-        updates = {}
+      for todoist_task in todoist_tasks:
+        todoist_task_id = todoist_task.get("id")
+        if not todoist_task_id:
+          continue
 
-        # Handle time sync
-        time_match = re.search(r'(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})', note_task.get('line', ''))
-        if time_match:
-          start_time = time_match.group(1)
-          end_time = time_match.group(2)
-          today = datetime.now().strftime("%Y-%m-%d")
-          start_dt = datetime.strptime(f"{today} {start_time}", "%Y-%m-%d %H:%M")
-          end_dt = datetime.strptime(f"{today} {end_time}", "%Y-%m-%d %H:%M")
-          duration = int((end_dt - start_dt).total_seconds() / 60)
+        if note_task_id == str(todoist_task_id):
+          # Handle completion sync only
+          note_completed = note_task.get("completed", False)
+          todoist_completed = todoist_task.get("completed", False)
 
-          if todoist_task.get('due') and todoist_task['due'].get('datetime'):
-            todoist_datetime = datetime.fromisoformat(todoist_task['due']['datetime'].replace('Z', '+00:00'))
-            todoist_time = todoist_datetime.strftime("%H:%M")
-            todoist_date = todoist_datetime.strftime("%Y-%m-%d")
-
-            if todoist_time != start_time:
-              log_info(f"Time differs for task {note_task_id}:")
-              log_info(f"  Note time: {start_time}")
-              log_info(f"  Todoist time: {todoist_time}")
-
-              # Get Todoist's last update time for this task
-              todoist_update_time = todoist_time_updates.get(note_task_id)
-
-              # Compare timezone-aware datetimes
-              if note_mtime and (not todoist_update_time or note_mtime > todoist_update_time):
-                log_info(f"Using Obsidian's time as note was modified at {note_mtime}")
-                if todoist_task['due'].get('string'):
-                  # For recurring tasks, preserve the full NLP string
-                  due_string = todoist_task['due']['string']
-                  # Extract everything except the time
-                  recurrence_match = re.match(r'^(.*?)\b\d{1,2}:\d{2}\b(.*)$', due_string)
-                  if recurrence_match:
-                    before_time = recurrence_match.group(1)
-                    after_time = recurrence_match.group(2)
-                    updates["due_string"] = f"{before_time}{start_time}{after_time}"
-                else:
-                  # For non-recurring tasks, use due_datetime
-                  updates["due_datetime"] = start_dt.isoformat()
-                updates["duration"] = str(duration)
-                updates["duration_unit"] = "minute"
-                needs_update = True
-              # If Todoist has a more recent update, use Todoist's time
-              elif todoist_update_time:
-                log_info(f"Using Todoist's time as it was updated at {todoist_update_time}")
-                note_task['line'] = note_task['line'].replace(
-                  f"{start_time} - {end_time}",
-                  f"{todoist_time} - {(todoist_datetime + timedelta(minutes=duration)).strftime('%H:%M')}"
-                )
-              # If no timestamps available, use Obsidian's time
+          if note_completed != todoist_completed:
+            # If task has a completion time in Todoist, use Todoist's state
+            if note_task_id in todoist_completion_times:
+              if todoist_completed:
+                log_info(f"Task {note_task_id} was completed in Todoist at {todoist_completion_times[note_task_id]}")
+                note_task["completed"] = True
               else:
-                log_info(f"Using Obsidian's time as no update times available")
-                if todoist_task['due'].get('string'):
-                  # For recurring tasks, update only the time in due_string
-                  due_string = todoist_task['due']['string']
-                  time_pattern = r'\b\d{1,2}:\d{2}\b'
-                  updates["due_string"] = re.sub(time_pattern, start_time, due_string)
-                else:
-                  # For non-recurring tasks, use due_datetime
-                  updates["due_datetime"] = start_dt.isoformat()
-                updates["duration"] = str(duration)
-                updates["duration_unit"] = "minute"
-                needs_update = True
-
-        # Handle completion sync
-        note_completed = note_task.get("completed", False)
-        todoist_completed = todoist_task.get("completed", False)
-
-        if note_completed != todoist_completed:
-          # If task has a completion time in Todoist, use Todoist's state
-          if note_task_id in todoist_completion_times:
-            if todoist_completed:
-              log_info(f"Task {note_task_id} was completed in Todoist at {todoist_completion_times[note_task_id]}")
-              note_task["completed"] = True
+                log_info(f"Task {note_task_id} was uncompleted in Todoist")
+                note_task["completed"] = False
+            # If no completion time in Todoist, use Obsidian's state
             else:
-              log_info(f"Task {note_task_id} was uncompleted in Todoist")
-              note_task["completed"] = False
-          # If no completion time in Todoist, use Obsidian's state
-          else:
-            if note_completed:
-              log_info(f"Completing task {note_task_id} in Todoist to match note")
-              close_todoist_task(todoist_task_id)
-            else:
-              log_info(f"Reopening task {note_task_id} in Todoist to match note")
-              reopen_todoist_task(todoist_task_id)
+              if note_completed:
+                log_info(f"Completing task {note_task_id} in Todoist to match note")
+                close_todoist_task(todoist_task_id)
+              else:
+                log_info(f"Reopening task {note_task_id} in Todoist to match note")
+                reopen_todoist_task(todoist_task_id)
 
-        # Update task if needed
-        if needs_update and updates:
-          update_todoist_task(todoist_task_id, updates)
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching data: {e}", 'red'))
 
 def close_todoist_task(task_id: str):
   """Mark a Todoist task as completed."""
