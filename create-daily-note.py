@@ -174,7 +174,7 @@ def format_todoist_tasks(tasks: List[Dict], is_today: bool = False) -> str:
   # Get project names
   project_names = get_project_names()
   formatted_tasks = []
-  today = datetime.now().strftime("%Y-%m-%d")
+  today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
   # Count all tasks for today, including completed ones
   total_tasks = len(tasks)
@@ -670,7 +670,7 @@ def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
 
   # Ensure dates are not too far in the future (e.g., not in 2026)
-  max_future_date = datetime.now() + timedelta(days=365)  # Max 1 year ahead
+  max_future_date = datetime.now(timezone.utc) + timedelta(days=365)  # Make max_future_date timezone-aware
   if start_dt > max_future_date:
     log_info(f"Skipping event too far in future: {event['summary']} on {start_dt}")
     return
@@ -958,7 +958,7 @@ def get_completed_tasks(headers: Dict) -> List[Dict]:
     response.raise_for_status()
     completed_data = response.json()
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     completed_tasks = []
 
     # Get all tasks to find subtasks
@@ -1027,7 +1027,7 @@ def dummy_sync_google_calendar(days: int = 30):
   service = build('calendar', 'v3', credentials=creds)
 
   # Set time range (past 30 days by default)
-  end_date = datetime.now()
+  end_date = datetime.now(timezone.utc)
   start_date = end_date - timedelta(days=days)
 
   calendars = {
