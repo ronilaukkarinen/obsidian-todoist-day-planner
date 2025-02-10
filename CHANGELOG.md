@@ -1,3 +1,7 @@
+### 1.1.1: 2025-02-10
+
+* Prevent tasks being added to Todoist if they already exist (when Todoist tasks added to calendar via Sunsama or via other means)
+
 ### 1.1.0: 2025-02-03
 
 * Disable date sync from Obsidian to Todoist as it causes issues

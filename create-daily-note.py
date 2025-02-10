@@ -13,6 +13,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import argparse
 import uuid
+import difflib
 
 # Load environment variables
 load_dotenv()
@@ -657,6 +658,57 @@ def task_exists_in_todoist(event_id: str, event_title: str, event_date: str) -> 
       return True
   return False
 
+def find_similar_todoist_task(event_title: str, start_dt: datetime, all_tasks: List[Dict]) -> bool:
+  """Check if a similar task already exists in Todoist."""
+  # Clean up event title for comparison
+  clean_event = re.sub(r'\s+', ' ', event_title.lower().strip())
+  # Remove any common suffixes that might be added
+  clean_event = clean_event.replace(' @google-kalenterin tapahtuma', '')
+
+  # Get the date part for comparison
+  event_date = start_dt.strftime('%Y-%m-%d')
+  event_time = start_dt.strftime('%H:%M')
+
+  log_info(f"Checking for similar tasks to: '{clean_event}' on {event_date} at {event_time}")
+
+  for task in all_tasks:
+    # Clean up task title
+    task_title = task.get('content', '').lower().strip()
+    task_title = re.sub(r'\s+', ' ', task_title)
+    task_title = task_title.replace(' @google-kalenterin tapahtuma', '')
+
+    # Check if task has a due date
+    if task.get('due') and task['due'].get('datetime'):
+      task_dt = datetime.fromisoformat(task['due']['datetime'].replace('Z', '+00:00'))
+      task_date = task_dt.strftime('%Y-%m-%d')
+      task_time = task_dt.strftime('%H:%M')
+
+      # Compare dates and titles
+      if task_date == event_date:
+        log_info(f"Found task on same date: '{task_title}' at {task_time}")
+
+        # Check for exact match (ignoring case and extra spaces)
+        if task_title == clean_event:
+          log_info(f"Found exact match: '{task_title}'")
+          return True
+
+        # Check for similar titles
+        similarity = difflib.SequenceMatcher(None, clean_event, task_title).ratio()
+        log_info(f"Similarity ratio: {similarity:.2f} between '{clean_event}' and '{task_title}'")
+
+        # Lower the similarity threshold and also check time proximity
+        if similarity > 0.7:  # More lenient similarity threshold
+          # Check if times are within 5 minutes of each other
+          time_diff = abs((task_dt - start_dt).total_seconds() / 60)
+          if time_diff <= 5:
+            log_info(f"Found similar task with matching time (diff: {time_diff}min): '{task_title}'")
+            return True
+          else:
+            log_info(f"Times don't match (diff: {time_diff}min) for similar task: '{task_title}'")
+
+  log_info(f"No similar tasks found for: '{clean_event}'")
+  return False
+
 def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   """Create a task in Todoist from Google Calendar event."""
   start = event['start'].get('dateTime')
@@ -669,10 +721,33 @@ def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
   end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
 
-  # Ensure dates are not too far in the future (e.g., not in 2026)
-  max_future_date = datetime.now(timezone.utc) + timedelta(days=365)  # Make max_future_date timezone-aware
+  # Ensure dates are not too far in the future
+  max_future_date = datetime.now(timezone.utc) + timedelta(days=365)
   if start_dt > max_future_date:
     log_info(f"Skipping event too far in future: {event['summary']} on {start_dt}")
+    return
+
+  # Get all current Todoist tasks for comparison
+  api_key = os.getenv('TODOIST_API_KEY')
+  headers = {"Authorization": f"Bearer {api_key}"}
+  try:
+    response = requests.get(
+      "https://api.todoist.com/rest/v2/tasks",
+      headers=headers
+    )
+    response.raise_for_status()
+    all_tasks = response.json()
+
+    # Check for similar existing tasks
+    if find_similar_todoist_task(event['summary'], start_dt, all_tasks):
+      log_info(f"Skipping event that already exists in Todoist: {event['summary']}")
+      # Still save to log to prevent future checks
+      event_date = start_dt.strftime('%Y-%m-%d')
+      save_synced_event(event['id'], event['summary'], event_date)
+      return
+
+  except requests.exceptions.RequestException as e:
+    print(colored(f"Error fetching Todoist tasks: {e}", 'red'))
     return
 
   # Calculate duration in minutes
