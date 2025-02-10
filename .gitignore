@@ -1,3 +1,5 @@
+.venv
+venv
 synced_events.log
 .env
 working-indents-and-times-in-completed.py
