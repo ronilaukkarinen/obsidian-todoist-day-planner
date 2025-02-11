@@ -721,6 +721,11 @@ def create_todoist_task(event: Dict, project_id: str, dry_run: bool = False):
   start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
   end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
 
+  # Convert to local timezone for Todoist
+  local_tz = datetime.now().astimezone().tzinfo
+  start_dt = start_dt.astimezone(local_tz)
+  end_dt = end_dt.astimezone(local_tz)
+
   # Ensure dates are not too far in the future
   max_future_date = datetime.now(timezone.utc) + timedelta(days=365)
   if start_dt > max_future_date:
